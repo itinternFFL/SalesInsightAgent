@@ -1,0 +1,23 @@
+[Unit]
+Description=Sales Insight Agent backend (FastAPI + Ollama-backed RAG)
+After=network.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=simple
+User=sales-agent
+Group=sales-agent
+WorkingDirectory=/opt/sales-agent
+EnvironmentFile=/etc/sales-agent/backend.env
+ExecStart=/opt/sales-agent/venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8001
+# Deliberately no --workers: backend/main.py keeps the search index and
+# dataset stats in a single process's memory (_state dict). Multiple worker
+# processes would each hold their own copy, and a file upload would only
+# refresh whichever worker handled that request - the rest would silently
+# serve stale data. Scale this service vertically (bigger server), not with
+# more workers, unless _state is moved to a shared store first.
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

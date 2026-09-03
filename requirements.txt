@@ -1,0 +1,9 @@
+pandas
+openpyxl
+pyarrow
+numpy
+sentence-transformers
+rank_bm25
+ollama
+fastapi
+uvicorn[standard]

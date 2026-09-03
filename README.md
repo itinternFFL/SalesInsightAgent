@@ -1,0 +1,131 @@
+# Sales Insight Agent (RAG)
+
+Ask natural-language questions about the FMO monthly sales reports in
+`data/` and get answers grounded in real pandas-computed numbers.
+
+Runs **entirely locally and free** — no API keys, no cloud calls, no data
+leaving this machine. It uses a local embedding model (sentence-transformers)
+for retrieval and a local LLM via [Ollama](https://ollama.com) for the actual
+answers.
+
+## How it works (RAG pipeline)
+
+1. **Ingest** (`src/ingest.py`) — loads every `data/*.xlsx` file (Cereals and
+   Dairy sheets), cleans and normalizes them into one tidy pandas
+   DataFrame (~55K transaction rows), cached to `cache/master_sales.parquet`.
+2. **Summarize** (`src/summarize.py`) — instead of embedding raw rows (too
+   many, too noisy), pandas `groupby` aggregations turn the raw data into a
+   few hundred natural-language summaries: totals by month/brand, by
+   month/channel, by month/category, brand trends over time, and top
+   customers. Every number in a summary is a real pandas calculation.
+3. **Embed** (`src/embeddings.py`) — each summary is turned into a vector
+   using a local `sentence-transformers` model (`all-MiniLM-L6-v2`, no API
+   key needed). Cached to `cache/chunks.parquet`.
+4. **Retrieve** (`src/index.py`) — when you ask a question, it's embedded
+   with the same model and compared (cosine similarity) against every
+   summary to find the most relevant ones.
+5. **Generate** (`src/agent.py`) — the top matches are sent to a local LLM
+   running via Ollama (`llama3.1:8b`) as context, with instructions to answer
+   only from that context and cite the figures used.
+
+There are three ways to use the pipeline:
+- **`backend/main.py`** — a FastAPI server exposing the pipeline over HTTP,
+  used by the React UI.
+- **`frontend/`** — a React (Vite) chat interface that talks to the backend.
+- **`src/chat.py`** — a plain command-line chat loop, no server needed.
+
+## Setup
+
+1. **Install [Ollama](https://ollama.com/download)** (already done on this
+   machine) and pull the model used by the agent:
+   ```
+   ollama pull llama3.1:8b
+   ```
+   Ollama runs as a background service once installed — no need to start
+   anything manually.
+
+2. **Python side** — activate the virtual environment (already created in
+   `venv/`) and install dependencies:
+   ```
+   venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+3. **Frontend side** — install the React app's dependencies (already done
+   once, only needed again if `frontend/node_modules` is deleted):
+   ```
+   cd frontend
+   npm install
+   ```
+
+## Run it
+
+**Web UI** — needs two terminals running at the same time:
+
+Terminal 1 (backend API, from the project root):
+```
+venv\Scripts\activate
+python -m uvicorn backend.main:app --port 8001
+```
+
+Terminal 2 (React dev server):
+```
+cd frontend
+npm run dev
+```
+
+Then open **http://localhost:5173** in your browser.
+
+**Command line**, if you'd rather not run a UI at all:
+```
+venv\Scripts\activate
+python -m src.chat
+```
+
+The first run of any of these builds the index (parses the Excel files,
+computes summaries, generates embeddings) — this takes a bit. Every run
+after that is instant because the index is cached in `cache/`. Answers
+themselves take a few seconds to a couple of minutes since the model runs
+on CPU.
+
+Example questions:
+- "What were total net sales for Cereals in April 2026?"
+- "Which Dairy brand performed best in May?"
+- "How did the Coated brand trend from January to June?"
+- "Who were the top customers for Cereals in March?"
+
+## Adding new monthly reports
+
+Drop the new `.xlsx` file into `data/` (same format: sheets named `Cereals`
+and `Dairy`, header on the 4th row). The next time you run the agent, it
+will notice the new file is newer than the cache and rebuild automatically.
+If you ever want to force a full rebuild, just delete the `cache/` folder.
+
+## Swapping in Claude instead (optional, better answer quality)
+
+If you later get an Anthropic API key, you can get noticeably better
+answers by swapping `src/agent.py` to call the Claude API
+(`anthropic.Anthropic().messages.create(model="claude-opus-5", ...)`)
+instead of `ollama.chat(...)` — everything else (ingest, summarize, embed,
+retrieve, backend, frontend) stays exactly the same, since only the final
+generation step changes.
+
+## Project structure
+
+```
+data/                  monthly sales report Excel files (input, not modified)
+cache/                 generated: cleaned data + embeddings (safe to delete)
+backend/
+  main.py              FastAPI server: /api/stats, /api/chat
+frontend/               React (Vite) chat UI
+  src/App.jsx           chat interface
+  src/App.css            layout + component styles (light theme)
+  src/index.css          base theme tokens, font stack
+src/
+  ingest.py            load + clean Excel files -> one DataFrame
+  summarize.py         pandas aggregations -> text summary chunks
+  embeddings.py         local embedding model wrapper
+  index.py             build/cache the embedded index; similarity retrieval
+  agent.py             retrieval + local Ollama call
+  chat.py              command-line chat loop
+```
