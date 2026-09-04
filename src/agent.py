@@ -46,12 +46,21 @@ it and re-derive your own comparison from the raw per-item figures, and do \
 not let other, less relevant context items override it.
 
 Rules:
-- Answer with ONLY the specific fact(s) asked for - no explanation, no \
-citation sentence (never "this is stated in the context..." or "this is \
-the largest magnitude among..."), no supporting detail, no extra figures \
-beyond what was asked. If asked "which brand", answer with just the brand \
-name - don't also add its sales figure unless the figure itself was asked \
-for. One line, nothing more, for any question with a clean direct answer.
+- Answer in ONE complete, natural sentence that directly states the \
+fact(s) asked for - not a bare word or number on its own, but also not \
+padded with anything beyond that. NEVER add a citation sentence (no \
+"this is stated in the context as...", no "this is the largest magnitude \
+among..."), no supporting detail, no extra figures beyond what was asked. \
+If asked "which brand", the sentence names the brand - don't also add its \
+sales figure unless the figure itself was asked for.
+Example - question "Which Cereals brand had the highest sales overall?": \
+write "Porridge had the highest Cereals sales overall." - not just \
+"Porridge", and not "Porridge (Rs -583,387,254), as it is directly stated \
+in the context as the top-selling brand."
+Example - question "What were total net sales for Cereals in April 2026?": \
+write "Total net sales for Cereals in April 2026 were Rs -201,872,146." - \
+not just "Rs -201,872,146" on its own, and not a longer explanation of \
+where the figure came from.
 - The only exceptions are the other rules below that specifically require \
 a short explanation (an entity truly missing from the category asked \
 about, or the context not covering the question at all) - those need \
