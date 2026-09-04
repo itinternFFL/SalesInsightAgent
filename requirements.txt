@@ -10,3 +10,4 @@ uvicorn[standard]
 msal
 python-dotenv
 itsdangerous
+bcrypt

@@ -17,6 +17,8 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from backend.auth import get_current_user
 from backend.auth import router as auth_router
+from backend.db import init_db
+from backend.local_auth import router as local_auth_router
 from backend.uploads import (
     build_upload_summary,
     discard_pending,
@@ -49,6 +51,7 @@ def _refresh_state():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    init_db()
     _state["index"] = get_index()
     df = load_all()
     _state["stats"] = {
@@ -100,6 +103,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(local_auth_router)
 
 
 class ChatRequest(BaseModel):

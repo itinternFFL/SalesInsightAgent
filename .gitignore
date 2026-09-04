@@ -3,6 +3,10 @@ cache/
 __pycache__/
 *.pyc
 
+# Local email/password account database - holds password hashes, never goes
+# to GitHub.
+db/
+
 # Real company sales data and local test artifacts - never goes to GitHub,
 # even in a private repo. data/ reaches the server separately (see
 # DEPLOYMENT.md, Part B step 2) via rsync, not via git.

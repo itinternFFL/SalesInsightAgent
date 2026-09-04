@@ -91,6 +91,28 @@ The backend only reads these at startup: restart the service
 (`sudo systemctl restart sales-agent-backend` in production, or just
 re-run uvicorn locally) after editing the env file.
 
+## Email/password sign-in (alternative to Microsoft SSO)
+
+The login page also offers a plain email + password option, for anyone who
+doesn't have (or doesn't want to use) a Microsoft account tied to the
+tenant. It's a second door into the same app, not a fallback within the
+Microsoft flow.
+
+- Self-registration is restricted by email domain: set
+  `ALLOWED_EMAIL_DOMAIN` (comma-separated for multiple domains, e.g.
+  `faujifoods.com,fauji.com.pk`) to the domain(s) your employees' email
+  addresses use. Anyone signing up with an address outside that list is
+  refused. Leave it unset to disable self-registration entirely (existing
+  accounts can still log in, but no new ones can be created).
+- Accounts are stored in a local SQLite database at `db/users.db`
+  (created automatically on first backend start) - passwords are hashed
+  with bcrypt, never stored in plain text, and the file is gitignored.
+- This does **not** get Microsoft's tenant-membership guarantee - anyone
+  with an inbox at an allowed domain can self-register, whether or not
+  they're actually an employee with a company Microsoft account. If that
+  distinction matters for your use case, prefer Microsoft SSO and consider
+  unsetting `ALLOWED_EMAIL_DOMAIN` to turn this path off.
+
 ## Optional: restrict to a specific group, not just the tenant
 
 The app currently allows anyone in your organization's tenant to sign in.

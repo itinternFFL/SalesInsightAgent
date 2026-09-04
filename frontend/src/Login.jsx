@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 const ERROR_MESSAGES = {
@@ -21,12 +23,48 @@ function MicrosoftLogo() {
 export default function Login() {
   const params = new URLSearchParams(window.location.search);
   const errorCode = params.get("login_error");
-  const errorMessage = errorCode
+  const ssoErrorMessage = errorCode
     ? ERROR_MESSAGES[errorCode] || "Sign-in failed. Please try again."
     : null;
 
+  const [mode, setMode] = useState("login"); // "login" | "register"
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState(null);
+
   function handleSignIn() {
     window.location.href = `${API_BASE}/auth/login`;
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setFormError(null);
+    setSubmitting(true);
+    try {
+      const path = mode === "register" ? "/auth/register" : "/auth/login-password";
+      const body = mode === "register" ? { name, email, password } : { email, password };
+      const res = await fetch(`${API_BASE}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || "Something went wrong. Please try again.");
+      }
+      window.location.href = "/";
+    } catch (err) {
+      setFormError(err.message);
+      setSubmitting(false);
+    }
+  }
+
+  function toggleMode() {
+    setMode((m) => (m === "login" ? "register" : "login"));
+    setFormError(null);
   }
 
   return (
@@ -46,7 +84,58 @@ export default function Login() {
           Sign in with Microsoft
         </button>
 
-        {errorMessage && <div className="login-error">{errorMessage}</div>}
+        {ssoErrorMessage && <div className="login-error">{ssoErrorMessage}</div>}
+
+        <div className="login-divider">
+          <span>or</span>
+        </div>
+
+        <form className="login-form" onSubmit={handleSubmit}>
+          {mode === "register" && (
+            <input
+              type="text"
+              placeholder="Full name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="login-input"
+            />
+          )}
+          <input
+            type="email"
+            placeholder="Work email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="login-input"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+            className="login-input"
+          />
+          <button type="submit" className="login-submit-btn" disabled={submitting}>
+            {submitting
+              ? mode === "register"
+                ? "Creating account…"
+                : "Signing in…"
+              : mode === "register"
+              ? "Create account"
+              : "Sign in"}
+          </button>
+        </form>
+
+        {formError && <div className="login-error">{formError}</div>}
+
+        <button type="button" className="login-toggle-mode" onClick={toggleMode}>
+          {mode === "register"
+            ? "Already have an account? Sign in"
+            : "New here? Create an account"}
+        </button>
       </div>
     </div>
   );
