@@ -96,10 +96,31 @@ Example questions:
 
 ## Adding new monthly reports
 
-Drop the new `.xlsx` file into `data/` (same format: sheets named `Cereals`
-and `Dairy`, header on the 4th row). The next time you run the agent, it
-will notice the new file is newer than the cache and rebuild automatically.
-If you ever want to force a full rebuild, just delete the `cache/` folder.
+Easiest way: attach the file in the chat UI (drag-and-drop or the `+`
+button) - it validates and merges automatically, with an auto-generated
+summary. See `DEPLOYMENT.md`'s "After deployment" section for the
+production equivalent.
+
+You can also drop the `.xlsx` file into `data/` directly (same format:
+sheets named `Cereals` and `Dairy` - the header row is detected
+automatically, so it doesn't have to be a fixed row). The next time you run
+the agent, it will notice the new file is newer than the cache and rebuild
+automatically. If you ever want to force a full rebuild, just delete the
+`cache/` folder.
+
+## Checking accuracy
+
+`eval_accuracy.py` runs a diverse sample of questions against the live
+agent and grades each one against ground truth computed independently via
+pandas straight from the current dataset (not from the agent's own
+output). Useful after any change to `src/summarize.py`, `src/agent.py`, or
+`src/index.py` to confirm nothing regressed:
+```
+python eval_accuracy.py
+```
+Takes a while - each question is a real Ollama call (roughly 1-3 minutes
+apiece on CPU), so a full run is easily 30-45 minutes. Prints a pass/fail
+per question and a final accuracy percentage.
 
 ## Swapping in Claude instead (optional, better answer quality)
 
@@ -115,17 +136,21 @@ generation step changes.
 ```
 data/                  monthly sales report Excel files (input, not modified)
 cache/                 generated: cleaned data + embeddings (safe to delete)
+deploy/                systemd unit + nginx config templates for the backend server
+DEPLOYMENT.md          full deployment runbook (Vercel frontend + self-hosted backend)
+eval_accuracy.py       accuracy evaluation - see "Checking accuracy" above
 backend/
-  main.py              FastAPI server: /api/stats, /api/chat
-frontend/               React (Vite) chat UI
-  src/App.jsx           chat interface
-  src/App.css            layout + component styles (light theme)
+  main.py              FastAPI server: /api/stats, /api/chat, /api/upload(/resolve)
+  uploads.py           upload staging, filename disambiguation, summary text
+frontend/              React (Vite) chat UI
+  src/App.jsx           chat interface, file upload, dataset sidebar
+  src/App.css            layout + component styles (glassmorphism theme)
   src/index.css          base theme tokens, font stack
 src/
-  ingest.py            load + clean Excel files -> one DataFrame
+  ingest.py            load + clean Excel files -> one DataFrame; upload validation
   summarize.py         pandas aggregations -> text summary chunks
   embeddings.py         local embedding model wrapper
-  index.py             build/cache the embedded index; similarity retrieval
+  index.py             build/cache the embedded index; hybrid retrieval
   agent.py             retrieval + local Ollama call
   chat.py              command-line chat loop
 ```
