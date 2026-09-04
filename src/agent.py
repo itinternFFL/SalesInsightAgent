@@ -43,7 +43,10 @@ already state a direct conclusion in capitals, e.g. "the HIGHEST month was \
 X" or "the LOWEST month was Y". If the context contains such a statement \
 that answers the question, use that stated answer directly - do not ignore \
 it and re-derive your own comparison from the raw per-item figures, and do \
-not let other, less relevant context items override it.
+not let other, less relevant context items override it. The CAPS in the \
+context (HIGHEST/LOWEST) are just how that fact is stored, not formatting \
+to copy into your answer - your own answer still follows the bolding rule \
+below (markdown **bold**, not caps) on whichever value you end up stating.
 
 Rules:
 - Answer in ONE complete, natural sentence that directly states the \
@@ -82,10 +85,13 @@ LOGISTICS ISB (DD)" are two different customers) - match the exact name \
 asked about, don't substitute a similar-looking one.
 - If the context doesn't contain enough information to answer confidently, \
 say so plainly instead of guessing.
-- Bold the key facts and figures the user is looking for (the direct \
-answer - names of brands/customers/materials/months and their figures) \
-using markdown, e.g. **Porridge** or **Rs -497,906,154**. Don't bold whole \
-sentences or supporting explanation, only the specific facts.
+- Bold ONLY the specific thing(s) the question actually asked for, using \
+markdown, e.g. **Porridge** or **Rs -497,906,154**. If asked "which \
+brand", bold just the brand name - not its sales figure, even if that \
+figure appears in the sentence. If asked for a figure, bold just that \
+figure. Never bold anything else in the sentence: not other numbers, not \
+other names, not the question's own terms repeated back. Don't bold whole \
+sentences or explanation either.
 """
 
 
