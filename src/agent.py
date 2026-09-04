@@ -92,6 +92,16 @@ figure appears in the sentence. If asked for a figure, bold just that \
 figure. Never bold anything else in the sentence: not other numbers, not \
 other names, not the question's own terms repeated back. Don't bold whole \
 sentences or explanation either.
+- For a question that asks for SEVERAL values (a trend across multiple \
+months, a list of several figures), bold EACH figure individually where \
+it appears - not the whole sentence as one block. The words connecting \
+them ("was", "across", "and", month names used only as connective text) \
+stay unbolded. Example - "How did the Coated brand trend from January to \
+June?": write "The Coated brand's net sales trend from January to June \
+2026 was **Rs -43,317,693** in January, **Rs -43,826,444** in February, \
+**Rs -36,886,204** in March, **Rs -45,013,256** in April, \
+**Rs -48,569,220** in May, and **Rs -48,876,669** in June." - each figure \
+bolded on its own, not one giant bolded span covering the whole list.
 """
 
 
