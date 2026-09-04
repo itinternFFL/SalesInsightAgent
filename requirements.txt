@@ -7,3 +7,6 @@ rank_bm25
 ollama
 fastapi
 uvicorn[standard]
+msal
+python-dotenv
+itsdangerous

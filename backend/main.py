@@ -3,13 +3,20 @@
 Run with:  python -m uvicorn backend.main:app --port 8001
 """
 
+from dotenv import load_dotenv
+
+load_dotenv()  # must run before any of the auth env vars below are read
+
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import Depends, FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from starlette.middleware.sessions import SessionMiddleware
 
+from backend.auth import get_current_user
+from backend.auth import router as auth_router
 from backend.uploads import (
     build_upload_summary,
     discard_pending,
@@ -56,6 +63,28 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Sales Insight Agent API", lifespan=lifespan)
 
+# "production" enables the cross-origin cookie settings needed once the
+# frontend (Vercel) and backend (a separate server) are on different
+# domains - see DEPLOYMENT.md and SETUP.md. Locally, the Vite dev proxy
+# makes everything same-origin, so the simpler same-site settings apply.
+APP_ENV = os.environ.get("APP_ENV", "development")
+IS_PRODUCTION = APP_ENV == "production"
+
+SESSION_SECRET_KEY = os.environ.get("SESSION_SECRET_KEY")
+if not SESSION_SECRET_KEY:
+    if IS_PRODUCTION:
+        raise RuntimeError("SESSION_SECRET_KEY must be set in production - see SETUP.md")
+    SESSION_SECRET_KEY = "dev-insecure-secret-change-me"
+    print("WARNING: SESSION_SECRET_KEY not set - using an insecure local-dev default.")
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SESSION_SECRET_KEY,
+    max_age=8 * 60 * 60,  # 8-hour session expiry
+    same_site="none" if IS_PRODUCTION else "lax",
+    https_only=IS_PRODUCTION,
+)
+
 # In production this is set via the systemd EnvironmentFile (see
 # deploy/sales-agent-backend.service) to the real Vercel frontend URL.
 ALLOWED_ORIGINS = os.environ.get(
@@ -65,9 +94,12 @@ ALLOWED_ORIGINS = os.environ.get(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,  # required for the session cookie to cross origins
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
 
 
 class ChatRequest(BaseModel):
@@ -83,19 +115,24 @@ class ResolveRequest(BaseModel):
     action: str  # "replace" | "keep_both" | "merge_anyway" | "skip"
 
 
+@app.get("/api/me")
+def me(user: dict = Depends(get_current_user)):
+    return user
+
+
 @app.get("/api/stats")
-def stats():
+def stats(user: dict = Depends(get_current_user)):
     return _state["stats"]
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
     response_text = answer(req.question, _state["index"])
     return ChatResponse(answer=response_text)
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...)):
+async def upload(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     file_bytes = await file.read()
     result = parse_upload(file_bytes, file.filename)
 
@@ -150,7 +187,7 @@ async def upload(file: UploadFile = File(...)):
 
 
 @app.post("/api/upload/resolve")
-def resolve_upload(req: ResolveRequest):
+def resolve_upload(req: ResolveRequest, user: dict = Depends(get_current_user)):
     file_bytes = read_pending(req.upload_id)
     if file_bytes is None:
         return {"status": "error", "message": "This upload has expired or was already resolved."}

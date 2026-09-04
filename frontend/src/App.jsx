@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
+import Login from "./Login.jsx";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8001";
+// Empty string -> relative paths, routed through the Vite dev proxy
+// locally (see vite.config.js) so the auth cookie is same-origin. Set
+// VITE_API_BASE to the real backend URL for production.
+const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 const EXAMPLE_QUESTIONS = [
   "What were total net sales for Cereals in April 2026?",
@@ -20,7 +24,7 @@ function Backdrop() {
   );
 }
 
-function Sidebar({ open, onClose, stats }) {
+function Sidebar({ open, onClose, stats, user, onSignOut }) {
   const range =
     stats && stats.months.length > 0
       ? `${stats.months[0]} to ${stats.months[stats.months.length - 1]}`
@@ -39,6 +43,17 @@ function Sidebar({ open, onClose, stats }) {
             Close
           </button>
         </div>
+        {user && (
+          <div className="sidebar-user">
+            <div className="sidebar-user-info">
+              <span className="sidebar-user-name">{user.name}</span>
+              <span className="sidebar-user-email">{user.email}</span>
+            </div>
+            <button className="sidebar-signout" onClick={onSignOut}>
+              Sign out
+            </button>
+          </div>
+        )}
         {stats ? (
           <div className="sidebar-stats">
             <div className="sidebar-stat">
@@ -120,6 +135,8 @@ function TypingBubble() {
 }
 
 export default function App() {
+  // undefined = still checking; null = not signed in; object = signed in.
+  const [user, setUser] = useState(undefined);
   const [stats, setStats] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -134,22 +151,49 @@ export default function App() {
   const dragCounter = useRef(0);
 
   function refreshStats() {
-    fetch(`${API_BASE}/api/stats`)
+    fetch(`${API_BASE}/api/stats`, { credentials: "include" })
       .then((res) => res.json())
       .then(setStats)
       .catch(() => {});
   }
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/stats`)
-      .then((res) => res.json())
-      .then(setStats)
-      .catch(() => setError("Could not reach the backend at localhost:8000."));
+    fetch(`${API_BASE}/api/me`, { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => {
+        setUser(data);
+        refreshStats();
+      })
+      .catch(() => setUser(null));
   }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading, uploading]);
+
+  async function handleSignOut() {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Sign out locally regardless - the session cookie may already be gone.
+    }
+    setUser(null);
+    setMessages([]);
+    setStats(null);
+  }
+
+  // Session expired mid-use (e.g. the 8-hour cookie lapsed) - send the user
+  // back to the login screen instead of leaving a confusing error banner up.
+  function checkAuth(res) {
+    if (res.status === 401) {
+      setUser(null);
+      throw new Error("Your session expired - please sign in again.");
+    }
+    if (!res.ok) throw new Error(`Request failed (${res.status})`);
+  }
 
   async function sendQuestion(question) {
     const trimmed = question.trim();
@@ -164,9 +208,10 @@ export default function App() {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ question: trimmed }),
       });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      checkAuth(res);
       const data = await res.json();
       setMessages((prev) => [
         ...prev,
@@ -194,9 +239,10 @@ export default function App() {
       formData.append("file", file);
       const res = await fetch(`${API_BASE}/api/upload`, {
         method: "POST",
+        credentials: "include",
         body: formData,
       });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      checkAuth(res);
       const data = await res.json();
 
       if (data.status === "saved") {
@@ -238,9 +284,10 @@ export default function App() {
       const res = await fetch(`${API_BASE}/api/upload/resolve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ upload_id: uploadId, action }),
       });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      checkAuth(res);
       const data = await res.json();
       setMessages((prev) => [
         ...prev,
@@ -293,6 +340,14 @@ export default function App() {
     setSuggestionIndex((i) => (i + 1) % EXAMPLE_QUESTIONS.length);
   }
 
+  if (user === undefined) {
+    return <div className="page" />; // brief blank frame while /api/me resolves
+  }
+
+  if (user === null) {
+    return <Login />;
+  }
+
   return (
     <div
       className="page"
@@ -323,6 +378,8 @@ export default function App() {
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         stats={stats}
+        user={user}
+        onSignOut={handleSignOut}
       />
 
       <div className="main">

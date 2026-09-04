@@ -192,6 +192,56 @@
   background: var(--color-accent-soft);
 }
 
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sidebar-user-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sidebar-user-name {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-user-email {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-signout {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.sidebar-signout:hover {
+  color: var(--color-accent-strong);
+  border-color: var(--color-accent);
+}
+
 .sidebar-stats {
   display: flex;
   flex-direction: column;
@@ -358,6 +408,72 @@
   font-size: 16px;
   font-weight: 650;
   box-shadow: var(--shadow-lift);
+}
+
+.login-page {
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  margin: 0 24px;
+  padding: 40px 32px;
+  border-radius: 20px;
+  text-align: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  box-shadow: var(--shadow-lift);
+}
+
+.login-title {
+  font-size: 22px;
+  margin-bottom: 8px;
+}
+
+.login-subtitle {
+  margin: 0 0 28px;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.ms-signin-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 11px 16px;
+  border-radius: 4px;
+  border: 1px solid #8c8c8c;
+  background: #ffffff;
+  color: #5e5e5e;
+  font-size: 15px;
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ms-signin-btn:hover {
+  background: #f3f3f3;
+}
+
+.ms-signin-btn:active {
+  background: #ebebeb;
+}
+
+.login-error {
+  margin-top: 20px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  color: #b91c1c;
+  font-size: 13px;
 }
 
 .typing {

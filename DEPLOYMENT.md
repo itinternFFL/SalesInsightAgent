@@ -91,7 +91,7 @@ sudo -u sales-agent bash -c '
 ```bash
 sudo mkdir -p /etc/sales-agent
 sudo cp /opt/sales-agent/deploy/backend.env.example /etc/sales-agent/backend.env
-sudo nano /etc/sales-agent/backend.env   # set ALLOWED_ORIGINS to your real Vercel URL
+sudo nano /etc/sales-agent/backend.env   # fill in ALLOWED_ORIGINS and the MS_* / SESSION_SECRET_KEY values - see SETUP.md
 
 sudo cp /opt/sales-agent/deploy/sales-agent-backend.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -121,10 +121,12 @@ Back in the Vercel project settings, update `VITE_API_BASE` to the real
 ## Part D - Smoke test
 
 ```bash
-curl https://api.yourdomain.com/api/stats
+curl https://api.yourdomain.com/api/me
 ```
-should return the dataset stats JSON. Then load the Vercel URL in a
-browser and ask a real question end-to-end.
+should return `{"detail":"Not authenticated"}` (401) - that's correct,
+`/api/stats` and friends are all behind login now, so this just confirms
+the server is up and the auth check is active. Then load the Vercel URL in
+a browser, sign in with Microsoft, and ask a real question end-to-end.
 
 ## After deployment: adding new monthly reports
 
@@ -143,10 +145,10 @@ sudo systemctl restart sales-agent-backend
   search index and dataset stats in memory (`_state`); running multiple
   uvicorn workers would give each one its own out-of-sync copy. Scale by
   using a bigger server, not more workers, unless that's refactored first.
-- **No authentication exists.** Once this has a public URL, anyone who
-  finds it can query your sales data and upload files. This wasn't in
-  scope for the initial build - worth adding (even basic auth via nginx)
-  before sharing the URL widely.
+- **Authentication is required, not optional, before going live.** The app
+  now has Microsoft SSO restricted to your organization's tenant (see
+  `SETUP.md`) - the Azure app registration side needs to be set up before
+  the login flow will work at all, both locally and in production.
 - **Response times stay CPU-bound.** Keeping Ollama means the 1-3
   minute-per-question latency seen during local development carries over
   to production, and concurrent users queue behind the same model
