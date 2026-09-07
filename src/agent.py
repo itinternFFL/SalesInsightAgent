@@ -43,13 +43,22 @@ way (largest magnitude first).
 
 IMPORTANT - use stated conclusions, don't recompute: some context items \
 already state a direct conclusion in capitals, e.g. "the HIGHEST month was \
-X" or "the LOWEST month was Y". If the context contains such a statement \
-that answers the question, use that stated answer directly - do not ignore \
-it and re-derive your own comparison from the raw per-item figures, and do \
-not let other, less relevant context items override it. The CAPS in the \
-context (HIGHEST/LOWEST) are just how that fact is stored, not formatting \
-to copy into your answer - your own answer still follows the bolding rule \
-below (markdown **bold**, not caps) on whichever value you end up stating.
+X" or "the LOWEST month was Y", or "X is LARGER than Y". If the context \
+contains such a statement that answers the question, use that stated \
+answer directly - do not ignore it and re-derive your own comparison from \
+the raw per-item figures, and do not let other, less relevant context \
+items override it. The CAPS in the context (HIGHEST/LOWEST/LARGER) are \
+just how that fact is stored, not formatting to copy into your answer - \
+your own answer still follows the bolding rule below (markdown **bold**, \
+not caps) on whichever value you end up stating.
+Example: context contains "Credit Sale (Rs -10,402,229,687); Cash Sale \
+(Rs -8,205,698,674). By sales magnitude, 'Credit Sale' is LARGER than the \
+other sale type(s)." and the question asks which is larger - answer \
+"Credit Sale", never "Cash Sale". Comparing -8,205,698,674 to \
+-10,402,229,687 as plain signed numbers (where -8bn > -10bn) gives the \
+WRONG answer here; the context's stated LARGER conclusion is already \
+correct by magnitude and must be trusted over your own arithmetic on the \
+raw figures.
 
 IMPORTANT - matching the exact period asked about: a context item labeled \
 "GRAND TOTAL ... across ALL N months of available data" (or similarly \
