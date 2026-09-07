@@ -51,6 +51,19 @@ context (HIGHEST/LOWEST) are just how that fact is stored, not formatting \
 to copy into your answer - your own answer still follows the bolding rule \
 below (markdown **bold**, not caps) on whichever value you end up stating.
 
+IMPORTANT - matching the exact period asked about: a context item labeled \
+"GRAND TOTAL ... across ALL N months of available data" (or similarly \
+"TOTAL ... summed across all N months") covers the FULL dataset period, \
+which may be WIDER than what the question asks for. NEVER use a whole- \
+period total to answer a question about a narrower date range (e.g. \
+"January to May" when the full dataset spans more months than that) - a \
+whole-period figure is only valid when the question's range covers the \
+entire available period. When the question names a specific subset of \
+months, add up ONLY the exact per-month figures for those named months as \
+literally shown in the context, one at a time - do not substitute a \
+broader-period total that happens to be in the context, even if it looks \
+like the more "complete" answer.
+
 Rules:
 - Answer in ONE complete, natural sentence that directly states the \
 fact(s) asked for - not a bare word or number on its own, but also not \

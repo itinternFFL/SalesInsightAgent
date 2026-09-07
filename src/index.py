@@ -51,9 +51,25 @@ AUTHORITATIVE_CHUNK_TYPES = {
 }
 AUTHORITATIVE_BOOST = 1.5
 
+# Of the authoritative types above, all but category_trend state a SINGLE
+# figure summed across the whole available period (e.g. "GRAND TOTAL ...
+# across ALL 14 months"). If the query names any month at all, that single
+# whole-period figure risks silently answering a narrower range the user
+# actually asked about (e.g. "January to May" when the full period is
+# longer) - the model was observed doing exactly this, using an "ALL N
+# months" total for a 5-month question, even with a prompt instruction
+# telling it not to. So these are excluded from retrieval entirely rather
+# than just de-boosted (de-boosting still let them win on raw semantic
+# similarity to "grand total" wording alone). category_trend is exempt -
+# it lists every month's figure individually, which is exactly the
+# ingredient needed to correctly answer a partial-range question.
+WHOLE_PERIOD_AGGREGATE_TYPES = AUTHORITATIVE_CHUNK_TYPES - {"category_trend"}
+
 MONTH_TOKENS = {
-    "january", "february", "march", "april", "may", "june",
-    "jan", "feb", "mar", "apr", "jun",
+    "january", "february", "march", "april", "may", "june", "july",
+    "august", "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept",
+    "oct", "nov", "dec",
 }
 
 
@@ -133,6 +149,11 @@ def retrieve(query: str, index_df: pd.DataFrame, k: int = 8) -> pd.DataFrame:
         working_df = index_df[keep].reset_index(drop=True)
     else:
         working_df = index_df
+
+    if _mentions_specific_month(query):
+        working_df = working_df[
+            ~working_df["chunk_type"].isin(WHOLE_PERIOD_AGGREGATE_TYPES)
+        ].reset_index(drop=True)
 
     query_vec = embed([query])[0]
     matrix = np.stack(working_df["embedding"].to_numpy())
