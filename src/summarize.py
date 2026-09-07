@@ -121,9 +121,9 @@ def _category_month_top_brands_chunks(df: pd.DataFrame) -> list[dict]:
         )
         text = (
             f"Top 5 {category} brands by sales magnitude in "
-            f"{_month_label(month)}, largest first (figures are negative by "
-            f"export convention - a larger magnitude means more sales "
-            f"activity, regardless of sign): {top_brands_str}."
+            f"{_month_label(month)}, largest first (ranked by magnitude "
+            f"regardless of sign - a larger magnitude means more sales "
+            f"activity even where figures are negative): {top_brands_str}."
         )
         chunks.append({
             "text": text,
@@ -400,9 +400,9 @@ def _top_customer_chunks(df: pd.DataFrame, top_n: int = 10) -> list[dict]:
         top_str = "; ".join(f"{c} ({_fmt_money(v)})" for c, v in top.items())
         text = (
             f"Top {top_n} customers by sales magnitude for {category} in "
-            f"{_month_label(month)}, largest first (figures are negative by "
-            f"export convention - a larger magnitude means more sales "
-            f"activity, regardless of sign): {top_str}."
+            f"{_month_label(month)}, largest first (ranked by magnitude "
+            f"regardless of sign - a larger magnitude means more sales "
+            f"activity even where figures are negative): {top_str}."
         )
         chunks.append({
             "text": text,

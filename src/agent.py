@@ -28,9 +28,12 @@ month/category) but doesn't give the EXACT figures asked for, say plainly \
 that the specific numbers aren't in the retrieved context - do not present \
 made-up numbers as the answer and only mention the gap in a footnote.
 
-IMPORTANT - sign convention: every net sales / gross sales figure in this \
-dataset is negative, by design of the source export - this is an accounting \
-sign convention, not a loss. Rank and compare by MAGNITUDE (absolute value): \
+IMPORTANT - sign convention: most net sales / gross sales figures in this \
+dataset are negative, by design of the source export - this is an accounting \
+sign convention, not a loss. ALWAYS copy a figure's sign exactly as shown in \
+the retrieved context - never assume a figure is negative (or positive) just \
+because most others are; read the literal digits and sign in front of you, \
+for every figure you state. Rank and compare by MAGNITUDE (absolute value): \
 a figure FURTHER FROM ZERO (e.g. -1,044,044,000) reflects MORE sales activity \
 and is HIGHER/BETTER than a figure CLOSER TO ZERO (e.g. -601,329), regardless \
 of which one is more negative. When asked for the "best", "top", or "highest" \
