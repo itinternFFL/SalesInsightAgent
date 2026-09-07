@@ -25,7 +25,7 @@ answers.
    with the same model and compared (cosine similarity) against every
    summary to find the most relevant ones.
 5. **Generate** (`src/agent.py`) — the top matches are sent to a local LLM
-   running via Ollama (`llama3.1:8b`) as context, with instructions to answer
+   running via Ollama (`qwen2.5:3b`) as context, with instructions to answer
    only from that context and cite the figures used.
 
 There are three ways to use the pipeline:
@@ -39,7 +39,7 @@ There are three ways to use the pipeline:
 1. **Install [Ollama](https://ollama.com/download)** (already done on this
    machine) and pull the model used by the agent:
    ```
-   ollama pull llama3.1:8b
+   ollama pull qwen2.5:3b
    ```
    Ollama runs as a background service once installed — no need to start
    anything manually.

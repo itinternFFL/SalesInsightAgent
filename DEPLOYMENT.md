@@ -2,11 +2,11 @@
 
 Architecture: the React frontend deploys to **Vercel** (a real public URL,
 free, in minutes). The FastAPI + Ollama backend needs an always-on server
-with enough RAM to hold `llama3.1:8b` in memory - Vercel's serverless
+with enough RAM to hold `qwen2.5:3b` in memory - Vercel's serverless
 functions can't run Ollama at all (no persistent process, no loaded model
-between requests, and hard execution timeouts far shorter than the 1-3
-minute response times this model takes on CPU) - so the backend runs on a
-separate VPS.
+between requests, and hard execution timeouts far shorter than the
+30-60 second response times this model takes on CPU) - so the backend runs
+on a separate VPS.
 
 This is two independent deploys connected by one URL. You can do Part A
 first and it'll just show connection errors until Part B is done, or do B
@@ -72,7 +72,7 @@ sudo -u sales-agent bash -c '
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh   # sets up its own systemd service
-ollama pull llama3.1:8b
+ollama pull qwen2.5:3b
 ```
 
 ### 5. Pre-build the index
@@ -149,8 +149,8 @@ sudo systemctl restart sales-agent-backend
   now has Microsoft SSO restricted to your organization's tenant (see
   `SETUP.md`) - the Azure app registration side needs to be set up before
   the login flow will work at all, both locally and in production.
-- **Response times stay CPU-bound.** Keeping Ollama means the 1-3
-  minute-per-question latency seen during local development carries over
+- **Response times stay CPU-bound.** Keeping Ollama means the ~30-60
+  second-per-question latency seen during local development carries over
   to production, and concurrent users queue behind the same model
   instance. If that becomes a problem, the fix is a GPU server or
   switching the backend to a cloud LLM API - not something to solve by

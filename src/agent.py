@@ -3,7 +3,16 @@ local Ollama model to answer the user's question grounded in that context.
 
 Runs fully locally via Ollama (https://ollama.com) - no API key, no data
 leaving this machine. Requires the Ollama app running and the model pulled:
-    ollama pull llama3.1:8b
+    ollama pull qwen2.5:3b
+
+Model choice: qwen2.5:3b was chosen over the larger llama3.1:8b for speed
+(roughly 2-3x faster per answer on CPU) after a direct accuracy comparison
+on eval_accuracy.py's question set - it has one known, bounded weakness
+(comparing the magnitude of two negative totals, e.g. "which sale type
+total is larger") that a 7B+ model gets right and 3B doesn't, at any
+quantization; everything else scored the same. If that specific pattern
+matters more than speed for your use case, llama3.1:8b remains a drop-in
+alternative - just change MODEL below and re-pull it.
 """
 
 import ollama
@@ -11,7 +20,7 @@ import pandas as pd
 
 from src.index import retrieve
 
-MODEL = "llama3.1:8b"
+MODEL = "qwen2.5:3b"
 
 SYSTEM_PROMPT = """You are a sales insight assistant for Fauji Meat/FMO sales \
 reports (Cereals and Dairy categories, January-June 2026).
