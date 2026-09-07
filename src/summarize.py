@@ -323,10 +323,10 @@ def _sale_type_totals_chunks(df: pd.DataFrame) -> list[dict]:
         ranked = _rank_by_magnitude(totals)
         ranked_str = "; ".join(f"{s} ({_fmt_money(v)})" for s, v in ranked.items())
         text = (
-            f"{category} net sales by Sale Type, summed across all "
-            f"{n_months} months of available data: {ranked_str}. By sales "
-            f"magnitude, '{ranked.index[0]}' is LARGER than the other sale "
-            f"type(s) for {category}."
+            f"By sales magnitude, '{ranked.index[0]}' is the LARGEST "
+            f"{category} sale type - LARGER than the other sale type(s) - "
+            f"summed across all {n_months} months of available data: "
+            f"{ranked_str}."
         )
         chunks.append({
             "text": text,
