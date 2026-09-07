@@ -131,12 +131,34 @@ new file changes `all_source_files` for everyone.
 Retrieval and generation together take tens of seconds - wasteful for a
 question that was always going to end in "no data," e.g. an Executive
 asking about a brand only their Manager uploaded. `backend/access_control.py`'s
-`find_out_of_scope_entity(question, full_df, scoped_df)` runs first, before
-either step: it checks whether the question names a specific brand,
-customer, material, channel, or sale type that exists in the *full*
-dataset but nowhere in what this user can see, and if so, `POST /api/chat`
-refuses immediately with no index build and no LLM call - measured at
-~400ms versus the usual 30-60+ seconds.
+`find_out_of_scope_entity(question, full_entity_values, scoped_entity_values)`
+runs first, before either step: it checks whether the question names a
+specific brand, customer, material, channel, or sale type that exists in
+the *full* dataset but nowhere in what this user can see, and if so,
+`POST /api/chat` refuses immediately with no index build and no LLM call -
+measured at ~400ms versus the usual 30-60+ seconds.
+
+It deliberately checks against both sides - the full dataset's values
+*and* the asker's own - not the asker's own values alone. Checking only
+the asker's own data, with nothing to compare against, can't distinguish
+"names a real entity that belongs to someone else" (should refuse) from
+"names nothing in particular" (an ordinary question like "what's the
+grand total?", which must NOT be refused) - both would equally fail to
+match the asker's own small value set, so that approach would refuse most
+normal questions along with the ones that should be refused.
+
+The function itself only does string matching, which stays cheap however
+large the dataset gets - the part that scales with dataset size is
+extracting each side's distinct values (`collect_entity_values`, an
+O(rows) scan), so that step is never done per-request. The whole-dataset
+side is computed once in `_refresh_state()` (`_state["entity_values_cache"]`)
+and reused for every request until the next upload; the per-scope side is
+cached the same way as the embedded chunk index
+(`_state["scoped_entity_values_cache"]`, keyed by the same
+accessible-filenames set as `scoped_index_cache`). Neither cache re-scans
+the master DataFrame on every question, so the check's per-request cost
+doesn't grow as more data is uploaded over time - only the (still cheap)
+one-time extraction after each upload does.
 
 This is a **skip-only** optimization, never a grant: a miss (no entity
 named, or the named entity happens to be in scope) just falls through to

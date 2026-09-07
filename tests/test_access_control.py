@@ -16,7 +16,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import backend.db as db
-from backend.access_control import find_out_of_scope_entity, get_accessible_filenames, get_accessible_user_ids
+from backend.access_control import (
+    collect_entity_values,
+    find_out_of_scope_entity,
+    get_accessible_filenames,
+    get_accessible_user_ids,
+)
 
 
 @pytest.fixture
@@ -134,7 +139,7 @@ def test_accessible_filenames_scoped_by_uploader_branch(fresh_db):
     assert e1_files == {"e1_file.xlsx"}
 
 
-def _make_full_and_scoped_df():
+def _make_full_and_scoped_values():
     full_df = pd.DataFrame({
         "brand": ["BudgetPlan", "PowerBI", "Coated"],
         "customer_name": ["Finance - Budgeting Dept", "Analytics - PowerBI Team", "Big Retailer Ltd"],
@@ -145,37 +150,37 @@ def _make_full_and_scoped_df():
     # Scoped view only contains the PowerBI row - as if this user can only
     # see the file that row came from.
     scoped_df = full_df.iloc[[1]].reset_index(drop=True)
-    return full_df, scoped_df
+    return collect_entity_values(full_df), collect_entity_values(scoped_df)
 
 
 def test_out_of_scope_entity_detected_for_named_brand():
-    full_df, scoped_df = _make_full_and_scoped_df()
+    full_values, scoped_values = _make_full_and_scoped_values()
     result = find_out_of_scope_entity(
-        "What are the total net sales for BudgetPlan?", full_df, scoped_df
+        "What are the total net sales for BudgetPlan?", full_values, scoped_values
     )
     assert result == "BudgetPlan"
 
 
 def test_in_scope_entity_not_flagged():
-    full_df, scoped_df = _make_full_and_scoped_df()
+    full_values, scoped_values = _make_full_and_scoped_values()
     result = find_out_of_scope_entity(
-        "What are the total net sales for PowerBI?", full_df, scoped_df
+        "What are the total net sales for PowerBI?", full_values, scoped_values
     )
     assert result is None
 
 
 def test_no_entity_mentioned_not_flagged():
-    full_df, scoped_df = _make_full_and_scoped_df()
+    full_values, scoped_values = _make_full_and_scoped_values()
     result = find_out_of_scope_entity(
-        "What is the grand total across all months?", full_df, scoped_df
+        "What is the grand total across all months?", full_values, scoped_values
     )
     assert result is None
 
 
 def test_out_of_scope_customer_name_detected():
-    full_df, scoped_df = _make_full_and_scoped_df()
+    full_values, scoped_values = _make_full_and_scoped_values()
     result = find_out_of_scope_entity(
-        "How much did Big Retailer Ltd buy?", full_df, scoped_df
+        "How much did Big Retailer Ltd buy?", full_values, scoped_values
     )
     assert result == "Big Retailer Ltd"
 
@@ -183,8 +188,14 @@ def test_out_of_scope_customer_name_detected():
 def test_short_generic_values_not_flagged():
     # "GT" (channel) and short sale-type-ish words are below the minimum
     # length guard - shouldn't false-positive on incidental substrings.
-    full_df, scoped_df = _make_full_and_scoped_df()
+    full_values, scoped_values = _make_full_and_scoped_values()
     result = find_out_of_scope_entity(
-        "What's a good strategy going forward?", full_df, scoped_df
+        "What's a good strategy going forward?", full_values, scoped_values
     )
     assert result is None
+
+
+def test_collect_entity_values_matches_original_dataframe():
+    full_values, _ = _make_full_and_scoped_values()
+    assert full_values["brand"] == {"BudgetPlan", "PowerBI", "Coated"}
+    assert full_values["sale_type"] == {"Credit Sale", "Cash Sale"}

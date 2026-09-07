@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
 from backend.access_control import (
+    collect_entity_values,
     find_out_of_scope_entity,
     get_accessible_filenames,
     get_accessible_user_ids,
@@ -42,6 +43,13 @@ from src.ingest import DATA_DIR, canonical_filename, load_all, parse_upload
 # index per distinct accessible-filenames set, since embedding is the
 # expensive step - see ACCESS-CONTROL.md's "Performance & caching" section
 # for why this is safe to cache (and when it's invalidated).
+#
+# _state["entity_values_cache"] and _state["scoped_entity_values_cache"]
+# back the out-of-scope fast-path (ACCESS-CONTROL.md's "Fast-path
+# refusal"): the whole-dataset side is recomputed once per data refresh
+# below, and the per-scope side is cached lazily the same way the index
+# cache is, so neither one re-scans the (potentially large, always
+# growing) master DataFrame on every single chat request.
 _state: dict = {}
 
 
@@ -51,6 +59,8 @@ def _refresh_state():
     a fresh parse and rewrites master_sales.parquet with a newer mtime."""
     _state["master_df"] = load_all(use_cache=False)
     _state["scoped_index_cache"] = {}
+    _state["entity_values_cache"] = collect_entity_values(_state["master_df"])
+    _state["scoped_entity_values_cache"] = {}
 
 
 @asynccontextmanager
@@ -58,6 +68,8 @@ async def lifespan(app: FastAPI):
     init_db()
     _state["master_df"] = load_all()
     _state["scoped_index_cache"] = {}
+    _state["entity_values_cache"] = collect_entity_values(_state["master_df"])
+    _state["scoped_entity_values_cache"] = {}
     yield
     _state.clear()
 
@@ -137,6 +149,13 @@ def _scoped_index(scoped_df, cache_key):
     return cache[cache_key]
 
 
+def _scoped_entity_values(scoped_df, cache_key):
+    cache = _state["scoped_entity_values_cache"]
+    if cache_key not in cache:
+        cache[cache_key] = collect_entity_values(scoped_df)
+    return cache[cache_key]
+
+
 def _ensure_can_replace_file(user: dict, filename: str):
     """Blocks overwriting a file that belongs to someone outside the
     current user's accessible branch - without this, any authenticated
@@ -178,7 +197,10 @@ def chat(req: ChatRequest, user: dict = Depends(require_role_assigned)):
             "or upload a report to get started."
         )
 
-    out_of_scope_entity = find_out_of_scope_entity(req.question, _state["master_df"], scoped_df)
+    scoped_entity_values = _scoped_entity_values(scoped_df, cache_key)
+    out_of_scope_entity = find_out_of_scope_entity(
+        req.question, _state["entity_values_cache"], scoped_entity_values
+    )
     if out_of_scope_entity:
         return ChatResponse(answer=f"There's no data about {out_of_scope_entity} available to you.")
 

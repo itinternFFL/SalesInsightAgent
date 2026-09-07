@@ -81,7 +81,25 @@ ENTITY_COLUMNS = ["brand", "customer_name", "mat_name", "channel", "sale_type"]
 MIN_ENTITY_LENGTH = 4  # skip short/generic values, too likely to false-match
 
 
-def find_out_of_scope_entity(query: str, full_df, scoped_df) -> str | None:
+def collect_entity_values(df) -> dict[str, set]:
+    """The distinct values (per ENTITY_COLUMNS) actually present in `df`.
+    This is the one part of the check that scans a whole DataFrame - O(rows),
+    not just O(distinct values) - so callers should compute and cache it
+    once per DataFrame version rather than call this per request. See
+    backend/main.py's _state["entity_values_cache"] (whole-dataset side,
+    recomputed only in _refresh_state) and _scoped_entity_values() (per-
+    accessible-scope side, cached the same way as _scoped_index_cache) -
+    both invalidate exactly when the underlying data they summarize
+    changes, never on a schedule."""
+    values: dict[str, set] = {}
+    for col in ENTITY_COLUMNS:
+        values[col] = set(df[col].dropna().unique()) if col in df.columns else set()
+    return values
+
+
+def find_out_of_scope_entity(
+    query: str, full_entity_values: dict[str, set], scoped_entity_values: dict[str, set]
+) -> str | None:
     """Cheap, LLM-free check: does the question name a specific entity that
     exists in the FULL dataset but not anywhere in what this user can see?
     If so, return that entity's name so the caller can refuse immediately -
@@ -89,18 +107,29 @@ def find_out_of_scope_entity(query: str, full_df, scoped_df) -> str | None:
     every request (tens of seconds), for a query that was always going to
     end in "no data" anyway.
 
+    Takes precomputed entity-value sets (see collect_entity_values), not
+    raw DataFrames - this function itself is just string matching, cheap
+    regardless of how large the underlying dataset grows; the only part
+    that scales with dataset size is the extraction step, which callers
+    cache and reuse instead of redoing on every question.
+
     This can only ever cause a SKIP, never a false grant: a miss here (no
     entity matched, or the matched entity IS in scope) just means the
     normal RAG pipeline runs as before, which still correctly declines on
     its own - just slower. It must never be trusted as the sole access
     check for anything the model is allowed to actually answer from.
+    Checking only the asker's own values, with no whole-dataset reference
+    point, isn't an option: an ordinary question ("what's the grand
+    total?") would then just as trivially fail to match the asker's own
+    small value set as a genuinely out-of-scope one would, with no way to
+    tell "belongs to someone else" apart from "names nothing in
+    particular" - that would refuse most normal questions, not just the
+    ones that should be refused.
     """
     query_lower = query.lower()
     for col in ENTITY_COLUMNS:
-        if col not in full_df.columns:
-            continue
-        scoped_values = set(scoped_df[col].dropna().unique()) if col in scoped_df.columns else set()
-        for value in full_df[col].dropna().unique():
+        scoped_values = scoped_entity_values.get(col, set())
+        for value in full_entity_values.get(col, set()):
             value_str = str(value)
             if len(value_str) < MIN_ENTITY_LENGTH:
                 continue
