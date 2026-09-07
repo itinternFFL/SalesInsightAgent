@@ -11,3 +11,4 @@ msal
 python-dotenv
 itsdangerous
 bcrypt
+pytest

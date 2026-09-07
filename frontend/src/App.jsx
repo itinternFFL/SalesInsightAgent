@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
+import CompleteProfile from "./CompleteProfile.jsx";
 import Login from "./Login.jsx";
+import { ROLE_LABELS } from "./RoleFields.jsx";
 
 // Empty string -> relative paths, routed through the Vite dev proxy
 // locally (see vite.config.js) so the auth cookie is same-origin. Set
@@ -48,6 +50,9 @@ function Sidebar({ open, onClose, stats, user, onSignOut }) {
             <div className="sidebar-user-info">
               <span className="sidebar-user-name">{user.name}</span>
               <span className="sidebar-user-email">{user.email}</span>
+              {user.role && (
+                <span className="sidebar-user-role">{ROLE_LABELS[user.role]}</span>
+              )}
             </div>
             <button className="sidebar-signout" onClick={onSignOut}>
               Sign out
@@ -162,7 +167,7 @@ export default function App() {
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then((data) => {
         setUser(data);
-        refreshStats();
+        if (data.role) refreshStats(); // stats need a completed profile
       })
       .catch(() => setUser(null));
   }, []);
@@ -346,6 +351,18 @@ export default function App() {
 
   if (user === null) {
     return <Login />;
+  }
+
+  if (user.role === null) {
+    return (
+      <CompleteProfile
+        user={user}
+        onComplete={(updatedUser) => {
+          setUser(updatedUser);
+          refreshStats();
+        }}
+      />
+    );
   }
 
   return (

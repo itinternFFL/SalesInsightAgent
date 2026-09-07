@@ -1,4 +1,5 @@
 import { useState } from "react";
+import RoleFields from "./RoleFields.jsx";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -31,6 +32,8 @@ export default function Login() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState("");
+  const [reportsToId, setReportsToId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
 
@@ -44,7 +47,10 @@ export default function Login() {
     setSubmitting(true);
     try {
       const path = mode === "register" ? "/auth/register" : "/auth/login-password";
-      const body = mode === "register" ? { name, email, password } : { email, password };
+      const body =
+        mode === "register"
+          ? { name, email, password, role, reports_to_id: reportsToId ? Number(reportsToId) : null }
+          : { email, password };
       const res = await fetch(`${API_BASE}${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -65,6 +71,8 @@ export default function Login() {
   function toggleMode() {
     setMode((m) => (m === "login" ? "register" : "login"));
     setFormError(null);
+    setRole("");
+    setReportsToId("");
   }
 
   return (
@@ -92,14 +100,22 @@ export default function Login() {
 
         <form className="login-form" onSubmit={handleSubmit}>
           {mode === "register" && (
-            <input
-              type="text"
-              placeholder="Full name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="login-input"
-            />
+            <>
+              <input
+                type="text"
+                placeholder="Full name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="login-input"
+              />
+              <RoleFields
+                role={role}
+                setRole={setRole}
+                reportsToId={reportsToId}
+                setReportsToId={setReportsToId}
+              />
+            </>
           )}
           <input
             type="email"
@@ -118,7 +134,11 @@ export default function Login() {
             minLength={8}
             className="login-input"
           />
-          <button type="submit" className="login-submit-btn" disabled={submitting}>
+          <button
+            type="submit"
+            className="login-submit-btn"
+            disabled={submitting || (mode === "register" && !role)}
+          >
             {submitting
               ? mode === "register"
                 ? "Creating account…"

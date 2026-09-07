@@ -2,14 +2,20 @@
 
 Backend-owned Authorization Code flow via MSAL - the browser is redirected
 to Microsoft, Microsoft redirects back here with a code, we exchange it for
-tokens server-side, and store only the minimal user info in a signed
-HttpOnly session cookie. The frontend never sees the client secret or any
-Microsoft token; it only ever talks to /auth/* and reads /api/me.
+tokens server-side, and store only a user id in a signed HttpOnly session
+cookie. The frontend never sees the client secret or any Microsoft token; it
+only ever talks to /auth/* and reads /api/me.
 
 Tenant restriction is enforced twice: the authority URL below is
 tenant-specific (Microsoft's login page itself refuses accounts outside
 that tenant), and the returned ID token's `tid` claim is checked again
 here as defense in depth - see _validate_tenant().
+
+The session cookie only ever carries a user id, never role/name/email -
+get_current_user() re-reads the full row from the database on every
+request, so a role or reporting-line change (or an account deletion) is
+reflected on the very next request, from any device with a live session -
+see ACCESS-CONTROL.md.
 """
 
 import os
@@ -17,6 +23,8 @@ import os
 import msal
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
+
+from backend.db import get_or_create_sso_user, get_user_by_id
 
 MS_CLIENT_ID = os.environ.get("MS_CLIENT_ID")
 MS_CLIENT_SECRET = os.environ.get("MS_CLIENT_SECRET")
@@ -74,11 +82,10 @@ def callback(request: Request):
         # session for a token issued by the wrong tenant.
         return _login_error_redirect("wrong_tenant")
 
-    request.session["user"] = {
-        "name": claims.get("name"),
-        "email": claims.get("preferred_username") or claims.get("email"),
-        "oid": claims.get("oid"),
-    }
+    email = claims.get("preferred_username") or claims.get("email")
+    name = claims.get("name") or email
+    user_row = get_or_create_sso_user(email, name)
+    request.session["user"] = {"id": user_row["id"]}
     return RedirectResponse(FRONTEND_URL)
 
 
@@ -89,9 +96,18 @@ def logout(request: Request):
 
 
 def get_current_user(request: Request) -> dict:
-    """FastAPI dependency - protects a route by requiring a valid session.
+    """FastAPI dependency - protects a route by requiring a valid session,
+    and always re-reads the user's current role/reports_to_id from the
+    database (never trusts a cached copy) - see module docstring.
     Use as: Depends(get_current_user)."""
-    user = request.session.get("user")
-    if not user:
+    session_user = request.session.get("user")
+    if not session_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    user_row = get_user_by_id(session_user["id"])
+    if user_row is None:
+        # Account was deleted since the session was issued.
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user = dict(user_row)
+    user.pop("password_hash", None)  # never leave the hash reachable via /api/me
     return user

@@ -225,6 +225,15 @@
   text-overflow: ellipsis;
 }
 
+.sidebar-user-role {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-accent-strong);
+}
+
 .sidebar-signout {
   flex: none;
   padding: 6px 12px;

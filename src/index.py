@@ -84,9 +84,22 @@ def _cache_is_fresh() -> bool:
     return CHUNKS_PARQUET.stat().st_mtime >= MASTER_PARQUET.stat().st_mtime
 
 
+def build_index_from_df(data: pd.DataFrame, verbose: bool = True) -> pd.DataFrame:
+    """Build an embedded chunk index from an arbitrary (already-loaded, already
+    filtered) sales DataFrame - no disk caching, since callers that need a
+    subset of the data (e.g. access-control-scoped views) build one of these
+    per distinct subset. See get_index() for the cached whole-dataset path."""
+    chunks_df = build_chunks(data)
+    if verbose:
+        print(f"  {len(chunks_df)} summary chunks, embedding with sentence-transformers...")
+    vectors = embed(chunks_df["text"].tolist())
+    chunks_df["embedding"] = list(vectors)
+    return chunks_df
+
+
 def get_index(use_cache: bool = True, verbose: bool = True) -> pd.DataFrame:
-    """Return the chunk index (chunk_id, text, metadata columns, embedding),
-    building and caching it if needed."""
+    """Return the chunk index (chunk_id, text, metadata columns, embedding)
+    for the WHOLE dataset, building and caching it if needed."""
     if use_cache and _cache_is_fresh():
         return pd.read_parquet(CHUNKS_PARQUET)
 
@@ -94,12 +107,7 @@ def get_index(use_cache: bool = True, verbose: bool = True) -> pd.DataFrame:
         print("Building RAG index (first run, or data/ changed)...")
 
     data = load_all(use_cache=use_cache)
-    chunks_df = build_chunks(data)
-
-    if verbose:
-        print(f"  {len(chunks_df)} summary chunks, embedding with sentence-transformers...")
-    vectors = embed(chunks_df["text"].tolist())
-    chunks_df["embedding"] = list(vectors)
+    chunks_df = build_index_from_df(data, verbose=verbose)
 
     CACHE_DIR.mkdir(exist_ok=True)
     chunks_df.to_parquet(CHUNKS_PARQUET, index=False)
