@@ -70,9 +70,15 @@ def build_cases(df):
         sub = df[(df.category == category) & (df.month == month)]
         return _rank_by_magnitude(sub.groupby(group_col)["net_sale"].sum())
 
-    months_sorted = sorted(df["month"].unique())
-    latest_month = months_sorted[-1]
-    an_earlier_month = months_sorted[len(months_sorted) // 2]
+    # Only consider months where BOTH categories have data - a month with
+    # just one category's sheet (e.g. a single-sheet test upload) can't be
+    # used for the Dairy-in-latest-month-style questions below.
+    months_with_both = sorted(
+        set(df[df.category == "Cereals"]["month"].unique())
+        & set(df[df.category == "Dairy"]["month"].unique())
+    )
+    latest_month = months_with_both[-1]
+    an_earlier_month = months_with_both[len(months_with_both) // 2]
     latest_label = _month_label(latest_month)
     earlier_label = _month_label(an_earlier_month)
 
