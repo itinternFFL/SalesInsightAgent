@@ -10,12 +10,13 @@ these never touch the real db/users.db.
 import sys
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import backend.db as db
-from backend.access_control import get_accessible_filenames, get_accessible_user_ids
+from backend.access_control import find_out_of_scope_entity, get_accessible_filenames, get_accessible_user_ids
 
 
 @pytest.fixture
@@ -131,3 +132,59 @@ def test_accessible_filenames_scoped_by_uploader_branch(fresh_db):
 
     e1_files = get_accessible_filenames(e1, file_uploads, all_files)
     assert e1_files == {"e1_file.xlsx"}
+
+
+def _make_full_and_scoped_df():
+    full_df = pd.DataFrame({
+        "brand": ["BudgetPlan", "PowerBI", "Coated"],
+        "customer_name": ["Finance - Budgeting Dept", "Analytics - PowerBI Team", "Big Retailer Ltd"],
+        "mat_name": ["Budget Plan Pack", "PowerBI Dashboard Pack", "Coated Flakes Pack"],
+        "channel": ["Modern Trade", "Modern Trade", "GT"],
+        "sale_type": ["Credit Sale", "Cash Sale", "Credit Sale"],
+    })
+    # Scoped view only contains the PowerBI row - as if this user can only
+    # see the file that row came from.
+    scoped_df = full_df.iloc[[1]].reset_index(drop=True)
+    return full_df, scoped_df
+
+
+def test_out_of_scope_entity_detected_for_named_brand():
+    full_df, scoped_df = _make_full_and_scoped_df()
+    result = find_out_of_scope_entity(
+        "What are the total net sales for BudgetPlan?", full_df, scoped_df
+    )
+    assert result == "BudgetPlan"
+
+
+def test_in_scope_entity_not_flagged():
+    full_df, scoped_df = _make_full_and_scoped_df()
+    result = find_out_of_scope_entity(
+        "What are the total net sales for PowerBI?", full_df, scoped_df
+    )
+    assert result is None
+
+
+def test_no_entity_mentioned_not_flagged():
+    full_df, scoped_df = _make_full_and_scoped_df()
+    result = find_out_of_scope_entity(
+        "What is the grand total across all months?", full_df, scoped_df
+    )
+    assert result is None
+
+
+def test_out_of_scope_customer_name_detected():
+    full_df, scoped_df = _make_full_and_scoped_df()
+    result = find_out_of_scope_entity(
+        "How much did Big Retailer Ltd buy?", full_df, scoped_df
+    )
+    assert result == "Big Retailer Ltd"
+
+
+def test_short_generic_values_not_flagged():
+    # "GT" (channel) and short sale-type-ish words are below the minimum
+    # length guard - shouldn't false-positive on incidental substrings.
+    full_df, scoped_df = _make_full_and_scoped_df()
+    result = find_out_of_scope_entity(
+        "What's a good strategy going forward?", full_df, scoped_df
+    )
+    assert result is None

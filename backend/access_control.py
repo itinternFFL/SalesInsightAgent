@@ -72,6 +72,43 @@ def get_accessible_filenames(user_row, file_uploads: dict[str, int | None], all_
     return accessible
 
 
+# Columns worth checking a question against before running retrieval/
+# generation at all. Deliberately excludes "month" - a user can have
+# partial access to a month (some of its files, not all), so naming a
+# month doesn't mean "definitely no access" the way naming a specific
+# brand/customer/etc. that's entirely outside their scope does.
+ENTITY_COLUMNS = ["brand", "customer_name", "mat_name", "channel", "sale_type"]
+MIN_ENTITY_LENGTH = 4  # skip short/generic values, too likely to false-match
+
+
+def find_out_of_scope_entity(query: str, full_df, scoped_df) -> str | None:
+    """Cheap, LLM-free check: does the question name a specific entity that
+    exists in the FULL dataset but not anywhere in what this user can see?
+    If so, return that entity's name so the caller can refuse immediately -
+    skipping index building and generation entirely, the expensive part of
+    every request (tens of seconds), for a query that was always going to
+    end in "no data" anyway.
+
+    This can only ever cause a SKIP, never a false grant: a miss here (no
+    entity matched, or the matched entity IS in scope) just means the
+    normal RAG pipeline runs as before, which still correctly declines on
+    its own - just slower. It must never be trusted as the sole access
+    check for anything the model is allowed to actually answer from.
+    """
+    query_lower = query.lower()
+    for col in ENTITY_COLUMNS:
+        if col not in full_df.columns:
+            continue
+        scoped_values = set(scoped_df[col].dropna().unique()) if col in scoped_df.columns else set()
+        for value in full_df[col].dropna().unique():
+            value_str = str(value)
+            if len(value_str) < MIN_ENTITY_LENGTH:
+                continue
+            if value_str.lower() in query_lower and value not in scoped_values:
+                return value_str
+    return None
+
+
 def require_role_assigned(user: dict = Depends(get_current_user)) -> dict:
     """FastAPI dependency for every data-bearing endpoint - blocks access
     until the user has picked a role/manager via POST /auth/complete-profile.

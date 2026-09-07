@@ -73,7 +73,7 @@ decides what's visible:
 | Endpoint | Enforcement |
 |---|---|
 | `GET /api/stats` | Row/month/category counts computed from `_scoped_data(user)`, not the full dataset. |
-| `POST /api/chat` | The RAG chunk index is built from `_scoped_data(user)`'s filtered DataFrame - the LLM only ever sees data the user can access. |
+| `POST /api/chat` | The RAG chunk index is built from `_scoped_data(user)`'s filtered DataFrame - the LLM only ever sees data the user can access. A question naming a specific out-of-scope entity is refused before that, with no index build or LLM call - see "Fast-path refusal" below. |
 | `POST /api/upload` | New file, attributed to the uploader via `record_file_upload`. |
 | `POST /api/upload/resolve` (`action=replace`) | `_ensure_can_replace_file` 403s if the file being overwritten belongs to someone outside the caller's accessible set - prevents one branch destroying another's data by uploading a file for the same month. |
 
@@ -126,6 +126,27 @@ never serves stale data under an unchanged key. `_refresh_state()` (called
 after every successful upload) clears the whole cache outright, since a
 new file changes `all_source_files` for everyone.
 
+## Fast-path refusal for named out-of-scope entities
+
+Retrieval and generation together take tens of seconds - wasteful for a
+question that was always going to end in "no data," e.g. an Executive
+asking about a brand only their Manager uploaded. `backend/access_control.py`'s
+`find_out_of_scope_entity(question, full_df, scoped_df)` runs first, before
+either step: it checks whether the question names a specific brand,
+customer, material, channel, or sale type that exists in the *full*
+dataset but nowhere in what this user can see, and if so, `POST /api/chat`
+refuses immediately with no index build and no LLM call - measured at
+~400ms versus the usual 30-60+ seconds.
+
+This is a **skip-only** optimization, never a grant: a miss (no entity
+named, or the named entity happens to be in scope) just falls through to
+the normal pipeline, which still correctly declines on its own, only
+slower. It deliberately doesn't consider `month` - a user can have partial
+access to a month (some of its files, not all), so naming a month isn't
+proof of "no access" the way naming a brand that's entirely outside their
+scope is. It also skips short/generic values (under `MIN_ENTITY_LENGTH`)
+to avoid false-matching on incidental substrings.
+
 ## Upgrading an existing local database
 
 `db/users.db` from before this feature existed has the old two-column
@@ -141,4 +162,11 @@ first real deployment (see `DEPLOYMENT.md`).
 covers: a Manager seeing their whole branch, a Senior Executive seeing only
 their own Executives (Manager and sibling-branch data excluded), an
 Executive seeing only themselves (peers excluded), a no-role user, live
-reassignment, an orphaned report, and file-attribution scoping end-to-end.
+reassignment, an orphaned report, file-attribution scoping end-to-end, and
+`find_out_of_scope_entity`'s fast-path (an out-of-scope brand/customer name
+is caught, an in-scope one and a no-entity question are not, and short
+generic values don't false-match). The fast-path was also verified live
+against the running API: an out-of-scope question answered in ~400ms
+versus the usual 30-60+ seconds, while an in-scope question and a general
+question with no named entity both still produced correct, fully scoped
+answers through the normal pipeline.

@@ -15,7 +15,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
-from backend.access_control import get_accessible_filenames, get_accessible_user_ids, require_role_assigned
+from backend.access_control import (
+    find_out_of_scope_entity,
+    get_accessible_filenames,
+    get_accessible_user_ids,
+    require_role_assigned,
+)
 from backend.auth import get_current_user
 from backend.auth import router as auth_router
 from backend.db import get_uploader_id, init_db, list_file_uploads, record_file_upload
@@ -172,6 +177,11 @@ def chat(req: ChatRequest, user: dict = Depends(require_role_assigned)):
             answer="There's no sales data available to you yet - ask your manager, "
             "or upload a report to get started."
         )
+
+    out_of_scope_entity = find_out_of_scope_entity(req.question, _state["master_df"], scoped_df)
+    if out_of_scope_entity:
+        return ChatResponse(answer=f"There's no data about {out_of_scope_entity} available to you.")
+
     index_df = _scoped_index(scoped_df, cache_key)
     response_text = answer(req.question, index_df)
     return ChatResponse(answer=response_text)
