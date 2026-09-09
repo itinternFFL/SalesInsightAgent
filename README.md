@@ -110,17 +110,31 @@ automatically. If you ever want to force a full rebuild, just delete the
 
 ## Checking accuracy
 
-`eval_accuracy.py` runs a diverse sample of questions against the live
-agent and grades each one against ground truth computed independently via
-pandas straight from the current dataset (not from the agent's own
-output). Useful after any change to `src/summarize.py`, `src/agent.py`, or
-`src/index.py` to confirm nothing regressed:
+Two evaluation scripts, checking two different things:
+
+- **`eval_accuracy.py`** - does the agent give the *right numbers*? Runs a
+  diverse sample of questions against the live agent and grades each one
+  against ground truth computed independently via pandas straight from
+  the current dataset (not from the agent's own output). Useful after any
+  change to `src/summarize.py`, `src/agent.py`, or `src/index.py`.
+- **`eval_rbac_accuracy.py`** - does access control actually hold end to
+  end? For every real employee in the current hierarchy, checks that the
+  live chat pipeline answers correctly about their own data and, just as
+  importantly, never leaks a real figure when asked about data outside
+  their accessible branch. See `ACCESS-CONTROL.md`'s "Testing" section
+  for what a leak vs. a correct refusal looks like in the output.
+
 ```
 python eval_accuracy.py
+python eval_rbac_accuracy.py          # full N^2 matrix across all employees
+python eval_rbac_accuracy.py --quick  # self-access + one in/out-of-scope pair each
 ```
-Takes a while - each question is a real Ollama call (roughly 1-3 minutes
-apiece on CPU), so a full run is easily 30-45 minutes. Prints a pass/fail
-per question and a final accuracy percentage.
+Both take a while - each question is a real local Ollama call (roughly
+15-40s apiece with the current `qwen2.5:3b` model, more for broader
+whole-dataset questions), so `eval_accuracy.py` is easily 10-20 minutes
+and `eval_rbac_accuracy.py`'s full matrix scales with the *square* of the
+employee count (`--quick` avoids that). Both print a pass/fail per
+question and a final accuracy percentage.
 
 ## Swapping in Claude instead (optional, better answer quality)
 
@@ -138,7 +152,8 @@ data/                  monthly sales report Excel files (input, not modified)
 cache/                 generated: cleaned data + embeddings (safe to delete)
 deploy/                systemd unit + nginx config templates for the backend server
 DEPLOYMENT.md          full deployment runbook (Vercel frontend + self-hosted backend)
-eval_accuracy.py       accuracy evaluation - see "Checking accuracy" above
+eval_accuracy.py       answer-correctness evaluation - see "Checking accuracy" above
+eval_rbac_accuracy.py  RBAC scoping evaluation - see "Checking accuracy" above
 backend/
   main.py              FastAPI server: /api/stats, /api/chat, /api/upload(/resolve)
   uploads.py           upload staging, filename disambiguation, summary text
