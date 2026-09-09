@@ -17,9 +17,7 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
 from backend.access_control import (
-    collect_entity_values,
     employee_folder_name,
-    find_out_of_scope_entity,
     find_owning_employee_folder,
     get_accessible_filenames,
     get_accessible_user_ids,
@@ -41,17 +39,15 @@ from src.ingest import DATA_DIR, canonical_filename, load_all, parse_upload
 
 # _state["master_df"] is the whole company dataset - every user's queries
 # are scoped down from it per-request via _scoped_data(), never served
-# directly. _state["scoped_index_cache"] holds one built (embedded) chunk
-# index per distinct accessible-filenames set, since embedding is the
-# expensive step - see ACCESS-CONTROL.md's "Performance & caching" section
-# for why this is safe to cache (and when it's invalidated).
-#
-# _state["entity_values_cache"] and _state["scoped_entity_values_cache"]
-# back the out-of-scope fast-path (ACCESS-CONTROL.md's "Fast-path
-# refusal"): the whole-dataset side is recomputed once per data refresh
-# below, and the per-scope side is cached lazily the same way the index
-# cache is, so neither one re-scans the (potentially large, always
-# growing) master DataFrame on every single chat request.
+# directly, and nothing in this app ever answers a query from anything
+# outside that scoped view - see ACCESS-CONTROL.md's "Queries never
+# reference data outside the asker's scope" for why there is deliberately
+# no fast-path check that compares a question against the full dataset,
+# even just to decide whether to refuse faster.
+# _state["scoped_index_cache"] holds one built (embedded) chunk index per
+# distinct accessible-filenames set, since embedding is the expensive step
+# - see ACCESS-CONTROL.md's "Performance & caching" section for why this
+# is safe to cache (and when it's invalidated).
 _state: dict = {}
 
 
@@ -61,8 +57,6 @@ def _refresh_state():
     a fresh parse and rewrites master_sales.parquet with a newer mtime."""
     _state["master_df"] = load_all(use_cache=False)
     _state["scoped_index_cache"] = {}
-    _state["entity_values_cache"] = collect_entity_values(_state["master_df"])
-    _state["scoped_entity_values_cache"] = {}
 
 
 @asynccontextmanager
@@ -70,8 +64,6 @@ async def lifespan(app: FastAPI):
     init_db()
     _state["master_df"] = load_all()
     _state["scoped_index_cache"] = {}
-    _state["entity_values_cache"] = collect_entity_values(_state["master_df"])
-    _state["scoped_entity_values_cache"] = {}
     yield
     _state.clear()
 
@@ -152,13 +144,6 @@ def _scoped_index(scoped_df, cache_key):
     return cache[cache_key]
 
 
-def _scoped_entity_values(scoped_df, cache_key):
-    cache = _state["scoped_entity_values_cache"]
-    if cache_key not in cache:
-        cache[cache_key] = collect_entity_values(scoped_df)
-    return cache[cache_key]
-
-
 def _find_existing_path(filename: str) -> Path | None:
     """Search the whole data/ tree - legacy top-level files and every
     employee subfolder - for a file with this exact canonical filename.
@@ -228,19 +213,18 @@ def stats(user: dict = Depends(require_role_assigned)):
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, user: dict = Depends(require_role_assigned)):
+    # scoped_df is exactly - and only - the data this user is permitted to
+    # see. Every step below builds from it alone: no step ever compares
+    # against, reads, or reasons about anything outside it, including to
+    # decide how to respond to an out-of-scope question - see
+    # ACCESS-CONTROL.md's "Queries never reference data outside the
+    # asker's scope."
     scoped_df, cache_key = _scoped_data(user)
     if scoped_df.empty:
         return ChatResponse(
             answer="There's no sales data available to you yet - ask your manager, "
             "or upload a report to get started."
         )
-
-    scoped_entity_values = _scoped_entity_values(scoped_df, cache_key)
-    out_of_scope_entity = find_out_of_scope_entity(
-        req.question, _state["entity_values_cache"], scoped_entity_values
-    )
-    if out_of_scope_entity:
-        return ChatResponse(answer=f"There's no data about {out_of_scope_entity} available to you.")
 
     index_df = _scoped_index(scoped_df, cache_key)
     response_text = answer(req.question, index_df)

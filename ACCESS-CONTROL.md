@@ -72,8 +72,8 @@ it to make an access decision.
 (`rglob`, not `glob`), so both legacy and per-employee files are found
 regardless of nesting. **Canonical filenames must stay unique across the
 WHOLE tree, not just within one folder** - `source_file` (used for RBAC
-scoping and the entity-scope fast-path) is keyed by filename alone, with
-no path component, so two different employees' files for the same
+scoping) is keyed by filename alone, with no path component, so two
+different employees' files for the same
 calendar month can't both be named `Sale_Report_FMO-<Mon>-<Year>.xlsx`
 even in different folders, or their rows would become indistinguishable
 by owner despite the files sitting in different places. `_find_existing_path()`
@@ -130,7 +130,7 @@ decides what's visible:
 | Endpoint | Enforcement |
 |---|---|
 | `GET /api/stats` | Row/month/category counts computed from `_scoped_data(user)`, not the full dataset. |
-| `POST /api/chat` | The RAG chunk index is built from `_scoped_data(user)`'s filtered DataFrame - the LLM only ever sees data the user can access. A question naming a specific out-of-scope entity is refused before that, with no index build or LLM call - see "Fast-path refusal" below. |
+| `POST /api/chat` | The RAG chunk index is built ONLY from `_scoped_data(user)`'s filtered DataFrame - the LLM never sees, and the code never compares against, anything outside it, for any reason - see "Queries never reference data outside the asker's scope" below. |
 | `POST /api/upload` | New file written to `data/employees/<uploader's folder>/` - the folder placement itself is the access grant, no separate database record needed. |
 | `POST /api/upload/resolve` (`action=replace`) | `_ensure_can_replace_file` 403s if the file being overwritten sits in a folder outside the caller's accessible set - prevents one branch destroying another's data by uploading a file for the same month. |
 
@@ -192,51 +192,29 @@ never serves stale data under an unchanged key. `_refresh_state()` (called
 after every successful upload) clears the whole cache outright, since a
 new file changes the picture for everyone.
 
-## Fast-path refusal for named out-of-scope entities
+## Queries never reference data outside the asker's scope
 
-Retrieval and generation together take tens of seconds - wasteful for a
-question that was always going to end in "no data," e.g. an Executive
-asking about a brand only their Manager uploaded. `backend/access_control.py`'s
-`find_out_of_scope_entity(question, full_entity_values, scoped_entity_values)`
-runs first, before either step: it checks whether the question names a
-specific brand, customer, material, channel, or sale type that exists in
-the *full* dataset but nowhere in what this user can see, and if so,
-`POST /api/chat` refuses immediately with no index build and no LLM call -
-measured at ~400ms versus the usual 30-60+ seconds.
+`POST /api/chat` builds its retrieval index from `_scoped_data(user)`
+alone, and nothing else - no step anywhere in the request compares
+against, reads, or reasons about data outside that scope, **including to
+decide how to respond to a question about something out of scope.** If a
+question asks about something the model has no context for, it declines
+because that's genuinely all it was given - not because a separate check
+recognized the name and rejected it.
 
-"The asker's own values" here means exactly what `get_accessible_filenames`
-already determined for them - the content of their own and their reports'
-`data/employees/<name>/` folders (plus legacy data if they're a manager).
-It deliberately checks against both sides - the full dataset's values
-*and* the asker's own - not the asker's own values alone. Checking only
-the asker's own data, with nothing to compare against, can't distinguish
-"names a real entity that belongs to someone else" (should refuse) from
-"names nothing in particular" (an ordinary question like "what's the
-grand total?", which must NOT be refused) - both would equally fail to
-match the asker's own small value set, so that approach would refuse most
-normal questions along with the ones that should be refused.
-
-The function itself only does string matching, which stays cheap however
-large the dataset gets - the part that scales with dataset size is
-extracting each side's distinct values (`collect_entity_values`, an
-O(rows) scan), so that step is never done per-request. The whole-dataset
-side is computed once in `_refresh_state()` (`_state["entity_values_cache"]`)
-and reused for every request until the next upload; the per-scope side is
-cached the same way as the embedded chunk index
-(`_state["scoped_entity_values_cache"]`, keyed by the same
-accessible-filenames set as `scoped_index_cache`). Neither cache re-scans
-the master DataFrame on every question, so the check's per-request cost
-doesn't grow as more data is uploaded over time - only the (still cheap)
-one-time extraction after each upload does.
-
-This is a **skip-only** optimization, never a grant: a miss (no entity
-named, or the named entity happens to be in scope) just falls through to
-the normal pipeline, which still correctly declines on its own, only
-slower. It deliberately doesn't consider `month` - a user can have partial
-access to a month (some of its files, not all), so naming a month isn't
-proof of "no access" the way naming a brand that's entirely outside their
-scope is. It also skips short/generic values (under `MIN_ENTITY_LENGTH`)
-to avoid false-matching on incidental substrings.
+An earlier version worked differently: a fast pre-check
+(`find_out_of_scope_entity`, since removed) matched the question's text
+against known values from the *whole* dataset, so it could refuse an
+out-of-scope question in ~400ms without running retrieval or generation
+at all. That was faster, but it meant the server compared every question
+against data outside the asker's authorization, in principle, even though
+no row content was ever returned to them - only ever a "not found." This
+was traded away deliberately: the property "a query is answered from
+*only* the asker's own scoped data, full stop, with nothing else ever
+consulted for any purpose" was judged more important than the speed of a
+faster refusal. An out-of-scope question now takes the same tens of
+seconds as any other question, since it runs the full pipeline scoped
+only to what the asker can see - there's no longer a faster path for it.
 
 ## Upgrading an existing local database
 
@@ -255,10 +233,8 @@ their own Executives (Manager and sibling-branch data excluded), an
 Executive seeing only themselves (peers excluded), a no-role user, live
 reassignment, an orphaned report, folder-based file scoping end-to-end
 (including that moving a file between employee folders changes access on
-the very next call, with no cache to invalidate), `find_owning_employee_folder`,
-and `find_out_of_scope_entity`'s fast-path (an out-of-scope brand/customer
-name is caught, an in-scope one and a no-entity question are not, and
-short generic values don't false-match).
+the very next call, with no cache to invalidate), and
+`find_owning_employee_folder`.
 
 The whole folder-based rearchitecture was also verified live against the
 running API and cross-checked against the exact figures established
@@ -266,6 +242,12 @@ before the change: all 7 real accounts' grand totals matched their
 pre-refactor values exactly (e.g. a Senior Executive's Rs 6,500,000
 unchanged), plus live tests of upload → correct folder placement,
 cross-folder naming-conflict detection, cross-branch replace correctly
-blocked, "Keep Both" disambiguating globally rather than colliding
-between two employees' folders, and the fast-path still answering an
-out-of-scope question in ~400ms versus the usual 30-60+ seconds.
+blocked, and "Keep Both" disambiguating globally rather than colliding
+between two employees' folders.
+
+After the out-of-scope fast-path was removed, a further live test
+confirmed an out-of-scope question (an Executive asking about their
+Manager's brand) still declines correctly - now taking the full pipeline
+duration (~22s in testing) instead of the previous ~400ms shortcut, with
+the model's response confirming it had no awareness of the out-of-scope
+entity at all, not just a refusal to state its figures.
