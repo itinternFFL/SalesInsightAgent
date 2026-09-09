@@ -50,6 +50,48 @@ they uploaded**: every row in the master DataFrame already carries a
 Role-based access controls which *files'* rows a user's chat questions and
 stats are computed from - not individual rows within a file.
 
+## On-disk layout: `data/employees/<name>/`
+
+Physically, `data/` has two parts:
+
+- **Legacy company-wide files** stay directly in `data/` - the original
+  monthly exports that predate per-file attribution entirely (see
+  "Unattributed data" below). Nobody "owns" these; they're not per-employee.
+- **Per-employee uploads** live under `data/employees/<employee name>/` -
+  one subfolder per person, created automatically the first time they
+  upload. `POST /api/upload` writes new files here (`_employee_folder_name()`
+  in `backend/main.py`, sanitizing the display name for Windows); the 7
+  files uploaded while building/testing this feature were moved into their
+  matching folders by hand as a one-time migration.
+
+`src/ingest.py`'s `load_all()` searches this whole tree recursively
+(`rglob`, not `glob`), so both legacy and per-employee files are found
+regardless of nesting. **Canonical filenames must stay unique across the
+WHOLE tree, not just within one folder** - `file_uploads` and `source_file`
+are keyed by filename alone, with no path component, so two different
+employees' files for the same calendar month can't both be named
+`Sale_Report_FMO-<Mon>-<Year>.xlsx` even in different folders, or one's
+attribution would silently overwrite the other's despite both files still
+existing on disk. `_find_existing_path()` and `_find_free_path_globally()`
+in `backend/main.py` check the whole tree, not one folder, for exactly
+this reason - a bug caught and fixed while building this: an earlier
+version of "Keep Both" checked uniqueness only within the uploader's own
+folder, which let two identically-named files coexist on disk while their
+database attribution silently collided onto whichever was written last.
+
+**This folder structure is separate from - and doesn't replace - the
+database-driven access control above.** The chat app never touches these
+folders directly by name; it always goes through `file_uploads` and the
+hierarchy walk. The folder structure exists for two things instead: (1) a
+migration convenience matching how the database already attributes files,
+and (2) the physical location real Windows/NTFS folder permissions can be
+set against, for people who browse `data/` directly (file share, RDP,
+etc.) rather than through the app - see `deploy/setup-folder-permissions.ps1`.
+That script is deliberately not run automatically: creating login-capable
+local Windows accounts and changing a server's folder permissions is a
+real, hard-to-reverse change to its security surface, done once by
+whoever administers the machine, not as a side effect of an app feature.
+
 ## `getAccessibleUserIds` and how it's used
 
 `backend/access_control.py`:

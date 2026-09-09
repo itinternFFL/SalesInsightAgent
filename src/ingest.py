@@ -205,8 +205,16 @@ def _cache_is_fresh(xlsx_files: list[Path]) -> bool:
 
 def load_all(data_dir: Path = DATA_DIR, use_cache: bool = True) -> pd.DataFrame:
     """Load every monthly sales report into one tidy DataFrame, caching the
-    result to cache/master_sales.parquet so repeat runs skip re-parsing xlsx."""
-    xlsx_files = sorted(data_dir.glob("*.xlsx"))
+    result to cache/master_sales.parquet so repeat runs skip re-parsing xlsx.
+
+    Searches recursively - data/ holds legacy company-wide files at the top
+    level plus per-employee subfolders (data/employees/<name>/), and both
+    need to be found. Canonical filenames (see canonical_filename()) must
+    stay unique across the WHOLE tree, not just within one folder, since
+    source_file (used for upload attribution and RBAC scoping) is just the
+    filename, not the full path - two different employees' files for the
+    same month would collide."""
+    xlsx_files = sorted(data_dir.rglob("*.xlsx"))
     if not xlsx_files:
         raise FileNotFoundError(f"No .xlsx files found in {data_dir}")
 
