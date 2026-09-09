@@ -139,7 +139,7 @@ def _clean_cereals(df: pd.DataFrame, month: str, source_file: str) -> pd.DataFra
         "customer_name": _safe_col(df, "customer name"),
         "channel": _safe_col(df, "Channel"),
         "sale_type": None,  # not present in the Cereals sheet
-        "material_code": _safe_col(df, "Material"),
+        "material_code": _safe_col(df, "Material").astype(str),
         "mat_name": _safe_col(df, "mat name"),
         "brand": _safe_col(df, "Brand"),
         "gross_sales": pd.to_numeric(_safe_col(df, "Gross Sales Local"), errors="coerce"),
@@ -161,7 +161,7 @@ def _clean_dairy(df: pd.DataFrame, month: str, source_file: str) -> pd.DataFrame
         "customer_name": _safe_col(df, "customer name"),
         "channel": _safe_col(df, "Channel"),
         "sale_type": _safe_col(df, "Sale Type"),
-        "material_code": _safe_col(df, "Material"),
+        "material_code": _safe_col(df, "Material").astype(str),
         "mat_name": _safe_col(df, "mat name"),
         "brand": _safe_col(df, "Brand"),
         "gross_sales": pd.to_numeric(_safe_col(df, "Gross Sales Local"), errors="coerce"),
