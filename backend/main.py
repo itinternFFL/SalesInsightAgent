@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 load_dotenv()  # must run before any of the auth env vars below are read
 
 import os
-import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -19,14 +18,16 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from backend.access_control import (
     collect_entity_values,
+    employee_folder_name,
     find_out_of_scope_entity,
+    find_owning_employee_folder,
     get_accessible_filenames,
     get_accessible_user_ids,
     require_role_assigned,
 )
 from backend.auth import get_current_user
 from backend.auth import router as auth_router
-from backend.db import get_uploader_id, init_db, list_file_uploads, record_file_upload
+from backend.db import get_user_by_id, init_db, record_file_upload
 from backend.local_auth import router as local_auth_router
 from backend.uploads import (
     build_upload_summary,
@@ -133,12 +134,13 @@ class ResolveRequest(BaseModel):
 def _scoped_data(user: dict):
     """The (dataframe, cache-key) pair for exactly the sales data `user` is
     permitted to see, per ACCESS-CONTROL.md's hierarchy rules. Recomputed
-    on every call (no hierarchy caching), so a role/reports-to change or a
-    new upload is reflected on the very next request."""
+    on every call (no hierarchy caching, no folder-listing caching), so a
+    role/reports-to change or a new upload is reflected on the very next
+    request. accessible_files is read straight from data/employees/ - see
+    backend/access_control.py's module docstring for why the filesystem,
+    not a database table, is the source of truth for file ownership."""
     master_df = _state["master_df"]
-    all_source_files = master_df["source_file"].unique().tolist()
-    file_uploads = list_file_uploads()
-    accessible_files = get_accessible_filenames(user, file_uploads, all_source_files)
+    accessible_files = get_accessible_filenames(user, DATA_DIR)
     scoped_df = master_df[master_df["source_file"].isin(accessible_files)]
     return scoped_df, frozenset(accessible_files)
 
@@ -157,20 +159,13 @@ def _scoped_entity_values(scoped_df, cache_key):
     return cache[cache_key]
 
 
-def _employee_folder_name(user: dict) -> str:
-    """Filesystem-safe subfolder name for this user's own uploads, under
-    data/employees/<name>/ - falls back to a user-id-based name if the
-    display name sanitizes to nothing (e.g. all-invalid characters)."""
-    safe = re.sub(r'[<>:"/\\|?*]', "", user["name"]).strip()
-    return safe or f"user{user['id']}"
-
-
 def _find_existing_path(filename: str) -> Path | None:
     """Search the whole data/ tree - legacy top-level files and every
     employee subfolder - for a file with this exact canonical filename.
     Canonical filenames are unique per month across the WHOLE tree, not
-    just within one employee's folder, since file_uploads/source_file
-    attribution is keyed by filename alone - see src/ingest.py's
+    just within one employee's folder, since source_file (and, before
+    folder location became the source of truth, the old file_uploads
+    attribution) is keyed by filename alone - see src/ingest.py's
     load_all() docstring for why two different people's files for the
     same month can't coexist under different names."""
     matches = list(DATA_DIR.rglob(filename))
@@ -181,12 +176,9 @@ def _find_free_path_globally(target: Path) -> Path:
     """Like backend/uploads.py's find_free_path, but checks uniqueness
     across the WHOLE data/ tree, not just target's own folder - two
     employees' folders can't each hold a file with the identical name, or
-    file_uploads' by-filename attribution (and source_file/RBAC scoping,
-    which is also filename-keyed) would silently collide between them,
-    the way it did before this existed: the second uploader's own-folder
-    path never collided locally, so it kept the plain canonical name, and
-    record_file_upload() overwrote the first uploader's attribution even
-    though both physical files still existed on disk."""
+    source_file-keyed RBAC scoping would silently conflate them. The
+    second uploader's own-folder path never collided locally on its own,
+    so a folder-local check alone would let it through wrongly."""
     if _find_existing_path(target.name) is None:
         return target
     stem, suffix = target.stem, target.suffix
@@ -202,13 +194,17 @@ def _ensure_can_replace_file(user: dict, filename: str):
     """Blocks overwriting a file that belongs to someone outside the
     current user's accessible branch - without this, any authenticated
     user could destroy another branch's data just by uploading a file that
-    happens to canonicalize to the same name (same month)."""
-    existing_uploader_id = get_uploader_id(filename)
-    if existing_uploader_id is None:
+    happens to canonicalize to the same name (same month). Ownership is
+    read from which employee folder the file is currently sitting in -
+    see backend/access_control.py's find_owning_employee_folder."""
+    owning_folder = find_owning_employee_folder(filename, DATA_DIR)
+    if owning_folder is None:
         if user["role"] != "manager":
             raise HTTPException(status_code=403, detail="You don't have permission to replace this file.")
         return
-    if existing_uploader_id not in get_accessible_user_ids(user):
+    accessible_rows = (get_user_by_id(uid) for uid in get_accessible_user_ids(user))
+    accessible_folders = {employee_folder_name(row) for row in accessible_rows if row is not None}
+    if owning_folder not in accessible_folders:
         raise HTTPException(status_code=403, detail="You don't have permission to replace this file.")
 
 
@@ -270,7 +266,7 @@ async def upload(file: UploadFile = File(...), user: dict = Depends(require_role
     existing_path = _find_existing_path(canonical_name)
     naming_conflict = existing_path is not None
     target_path = existing_path or (
-        DATA_DIR / "employees" / _employee_folder_name(user) / canonical_name
+        DATA_DIR / "employees" / employee_folder_name(user) / canonical_name
     )
 
     if not naming_conflict and not result.has_schema_issues:
@@ -324,7 +320,7 @@ def resolve_upload(req: ResolveRequest, user: dict = Depends(require_role_assign
 
     result = parse_upload(file_bytes, "upload.xlsx")
     canonical_name = canonical_filename(result.month)
-    own_folder_path = DATA_DIR / "employees" / _employee_folder_name(user) / canonical_name
+    own_folder_path = DATA_DIR / "employees" / employee_folder_name(user) / canonical_name
 
     if req.action == "replace":
         _ensure_can_replace_file(user, canonical_name)

@@ -6,18 +6,31 @@ from themselves - see ACCESS-CONTROL.md for the full model, the
 "unattributed legacy data" policy, and the deleted/unassigned-manager edge
 case.
 
-Nothing here is cached across requests: every call re-reads the users table,
-so a hierarchy change (reassigning someone to a different manager) is
-reflected on the very next request, for every affected user, with no
-invalidation step needed. The only cache backend/main.py keeps is on the
-expensive part (embedding a filtered chunk index), keyed by the resulting
-accessible-filenames set - see build_scoped_index() there.
+File OWNERSHIP is determined by the filesystem, not the database: each
+employee's uploads live in data/employees/<name>/ (see
+ACCESS-CONTROL.md's "On-disk layout"), and that folder location is what
+get_accessible_filenames() and find_owning_employee_folder() read - not
+backend/db.py's file_uploads table, which exists only as an upload-time
+audit log now (who/when), not an access-control source of truth. Only the
+REPORTING HIERARCHY (who reports to whom) still comes from the database,
+since that relationship has no filesystem representation.
+
+Nothing here is cached across requests: every call re-reads the users
+table and re-lists the relevant folders, so a hierarchy change
+(reassigning someone to a different manager) or a new upload is reflected
+on the very next request, for every affected user, with no invalidation
+step needed. The only cache backend/main.py keeps is on the expensive
+part (embedding a filtered chunk index, and extracting entity values from
+it), keyed by the resulting accessible-filenames set.
 """
+
+import re
+from pathlib import Path
 
 from fastapi import Depends, HTTPException
 
 from backend.auth import get_current_user
-from backend.db import list_direct_reports
+from backend.db import get_user_by_id, list_direct_reports
 
 
 def get_accessible_user_ids(user_row) -> set[int]:
@@ -47,29 +60,65 @@ def get_accessible_user_ids(user_row) -> set[int]:
     return accessible
 
 
-def get_accessible_filenames(user_row, file_uploads: dict[str, int | None], all_source_files) -> set[str]:
-    """Which source_file values (see src/ingest.py's COMMON_COLUMNS) this
-    user's sales-data queries should be scoped to.
+def employee_folder_name(user_row) -> str:
+    """Filesystem-safe subfolder name for this user's own uploads, under
+    data/employees/<name>/ - falls back to a user-id-based name if the
+    display name sanitizes to nothing (e.g. all-invalid characters). The
+    single definition of "this user's folder," used both when writing a
+    new upload (backend/main.py) and when reading who owns what (below) -
+    keeping upload and read paths in agreement is what makes the folder a
+    reliable source of truth instead of two things that could drift."""
+    safe = re.sub(r'[<>:"/\\|?*]', "", user_row["name"]).strip()
+    return safe or f"user{user_row['id']}"
 
-    file_uploads: filename -> uploaded_by_id, from db.list_file_uploads() -
-    only covers files uploaded since this feature shipped.
-    all_source_files: every source_file value actually present in the
-    dataset right now (from the master DataFrame) - a filename in here but
-    NOT in file_uploads is legacy/unattributed (predates upload tracking).
+
+def get_accessible_filenames(user_row, data_dir: Path) -> set[str]:
+    """Which source_file values (see src/ingest.py's COMMON_COLUMNS) this
+    user's sales-data queries should be scoped to - read directly from the
+    filesystem, not a database table (see module docstring).
+
+    data_dir: the data/ directory (backend/main.py's DATA_DIR). Legacy
+    files sit directly in it; employee-owned files sit under
+    data_dir/employees/<name>/.
     """
     accessible_user_ids = get_accessible_user_ids(user_row)
-    accessible = set()
-    for filename in all_source_files:
-        uploader_id = file_uploads.get(filename)
-        if uploader_id is None:
-            # Unattributed/legacy data: visible only to managers (the
-            # broadest legitimate role) rather than everyone or no one -
-            # see ACCESS-CONTROL.md's "Unattributed data" section.
-            if user_row["role"] == "manager":
-                accessible.add(filename)
-        elif uploader_id in accessible_user_ids:
-            accessible.add(filename)
+    accessible: set[str] = set()
+
+    # Legacy/unattributed data (predates per-employee folders): visible
+    # only to managers (the broadest legitimate role) rather than everyone
+    # or no one - see ACCESS-CONTROL.md's "Unattributed data" section.
+    if user_row["role"] == "manager":
+        for path in data_dir.glob("*.xlsx"):
+            accessible.add(path.name)
+
+    # Employee-owned files: whatever's actually sitting in each accessible
+    # person's own folder, read fresh every call - no separate ownership
+    # record to fall out of sync with reality.
+    employees_root = data_dir / "employees"
+    for uid in accessible_user_ids:
+        member_row = get_user_by_id(uid)
+        if member_row is None:
+            continue  # deleted since the hierarchy walk read them
+        member_folder = employees_root / employee_folder_name(member_row)
+        if member_folder.is_dir():
+            for path in member_folder.glob("*.xlsx"):
+                accessible.add(path.name)
+
     return accessible
+
+
+def find_owning_employee_folder(filename: str, data_dir: Path) -> str | None:
+    """Which employee subfolder (if any) currently contains a file with
+    this exact name - the folder location IS the ownership record, so
+    this is the single check both get_accessible_filenames (read access)
+    and backend/main.py's replace-permission check are built on. None
+    means the file is a legacy/unattributed top-level file, not owned by
+    any specific employee."""
+    employees_root = data_dir / "employees"
+    if not employees_root.is_dir():
+        return None
+    matches = list(employees_root.rglob(filename))
+    return matches[0].parent.name if matches else None
 
 
 # Columns worth checking a question against before running retrieval/

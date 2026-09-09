@@ -3,11 +3,12 @@
     Sets up per-employee local Windows accounts and NTFS folder permissions
     for direct filesystem access to data/employees/<name>/, mirroring the
     same Manager -> Senior Executive -> Executive visibility rules already
-    enforced by the app's database-driven access control (see
-    ACCESS-CONTROL.md). This is a SEPARATE, complementary control - for
+    enforced by the app itself (see ACCESS-CONTROL.md - the app reads
+    these same folders directly, via its own web-app account system, not
+    Windows accounts). This is a SEPARATE, complementary control - for
     people who browse the data folder directly (File Explorer, RDP, a
     network share), not for the chat app itself, which never checks NTFS
-    permissions and always goes through the database instead.
+    permissions at all.
 
 .DESCRIPTION
     For each employee below:

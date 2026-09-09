@@ -18,7 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import backend.db as db
 from backend.access_control import (
     collect_entity_values,
+    employee_folder_name,
     find_out_of_scope_entity,
+    find_owning_employee_folder,
     get_accessible_filenames,
     get_accessible_user_ids,
 )
@@ -111,32 +113,72 @@ def test_orphaned_report_is_safe_not_a_leak(fresh_db):
     assert get_accessible_user_ids(s1_row) == {s1["id"], e1["id"]}
 
 
-def test_accessible_filenames_scoped_by_uploader_branch(fresh_db):
+def _write(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("dummy")
+
+
+def test_accessible_filenames_scoped_by_employee_folder(fresh_db, tmp_path):
     manager = _make_user(fresh_db, "m@x.com", "Manager", "manager")
     s1 = _make_user(fresh_db, "s1@x.com", "SE1", "senior_executive", manager["id"])
     s2 = _make_user(fresh_db, "s2@x.com", "SE2", "senior_executive", manager["id"])
     e1 = _make_user(fresh_db, "e1@x.com", "E1", "executive", s1["id"])
 
-    file_uploads = {
-        "manager_file.xlsx": manager["id"],
-        "s1_file.xlsx": s1["id"],
-        "s2_file.xlsx": s2["id"],
-        "e1_file.xlsx": e1["id"],
-        "legacy_file.xlsx": None,  # predates upload attribution
-    }
-    all_files = list(file_uploads.keys())
+    data_dir = tmp_path / "data"
+    _write(data_dir / "legacy_file.xlsx")  # predates per-employee folders
+    _write(data_dir / "employees" / employee_folder_name(manager) / "manager_file.xlsx")
+    _write(data_dir / "employees" / employee_folder_name(s1) / "s1_file.xlsx")
+    _write(data_dir / "employees" / employee_folder_name(s2) / "s2_file.xlsx")
+    _write(data_dir / "employees" / employee_folder_name(e1) / "e1_file.xlsx")
 
-    manager_files = get_accessible_filenames(manager, file_uploads, all_files)
-    assert manager_files == set(all_files)  # everything, including legacy data
+    all_files = {"legacy_file.xlsx", "manager_file.xlsx", "s1_file.xlsx", "s2_file.xlsx", "e1_file.xlsx"}
 
-    s1_files = get_accessible_filenames(s1, file_uploads, all_files)
+    manager_files = get_accessible_filenames(manager, data_dir)
+    assert manager_files == all_files  # everything, including legacy data
+
+    s1_files = get_accessible_filenames(s1, data_dir)
     assert s1_files == {"s1_file.xlsx", "e1_file.xlsx"}
     assert "manager_file.xlsx" not in s1_files
     assert "s2_file.xlsx" not in s1_files
     assert "legacy_file.xlsx" not in s1_files  # unattributed data is manager-only
 
-    e1_files = get_accessible_filenames(e1, file_uploads, all_files)
+    e1_files = get_accessible_filenames(e1, data_dir)
     assert e1_files == {"e1_file.xlsx"}
+
+
+def test_accessible_filenames_reflects_folder_changes_live(fresh_db, tmp_path):
+    """No caching anywhere in this path - moving a file between employee
+    folders (e.g. the equivalent of a re-upload/re-attribution) changes
+    who can see it on the very next call, same as a database update would
+    have before folders became the source of truth."""
+    manager = _make_user(fresh_db, "m@x.com", "Manager", "manager")
+    s1 = _make_user(fresh_db, "s1@x.com", "SE1", "senior_executive", manager["id"])
+    s2 = _make_user(fresh_db, "s2@x.com", "SE2", "senior_executive", manager["id"])
+
+    data_dir = tmp_path / "data"
+    s1_path = data_dir / "employees" / employee_folder_name(s1) / "shared.xlsx"
+    _write(s1_path)
+
+    assert "shared.xlsx" in get_accessible_filenames(s1, data_dir)
+    assert "shared.xlsx" not in get_accessible_filenames(s2, data_dir)
+
+    s2_path = data_dir / "employees" / employee_folder_name(s2) / "shared.xlsx"
+    s2_path.parent.mkdir(parents=True, exist_ok=True)
+    s1_path.rename(s2_path)
+
+    assert "shared.xlsx" not in get_accessible_filenames(s1, data_dir)
+    assert "shared.xlsx" in get_accessible_filenames(s2, data_dir)
+
+
+def test_find_owning_employee_folder(fresh_db, tmp_path):
+    s1 = _make_user(fresh_db, "s1@x.com", "SE1", "senior_executive", None)
+    data_dir = tmp_path / "data"
+    _write(data_dir / "employees" / employee_folder_name(s1) / "s1_file.xlsx")
+    _write(data_dir / "legacy_file.xlsx")
+
+    assert find_owning_employee_folder("s1_file.xlsx", data_dir) == employee_folder_name(s1)
+    assert find_owning_employee_folder("legacy_file.xlsx", data_dir) is None
+    assert find_owning_employee_folder("nonexistent.xlsx", data_dir) is None
 
 
 def _make_full_and_scoped_values():
